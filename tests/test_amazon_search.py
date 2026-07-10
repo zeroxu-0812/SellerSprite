@@ -2,6 +2,7 @@ from pathlib import Path
 from amazon_search import extract_products_from_html, parse_price, parse_rating, parse_reviews
 
 FIX = Path(__file__).parent / "fixtures" / "amazon_sample.html"
+REAL_DOM_FIX = Path(__file__).parent / "fixtures" / "amazon_real_dom.html"
 
 
 def test_extract_two_products():
@@ -42,4 +43,29 @@ def test_extract_skips_non_product_cards():
         '<div data-asin="notanasin"><div></div></div>'
     )
     assert extract_products_from_html(html) == []
+
+
+def test_extract_real_dom_fixture():
+    # Regression for the highest-risk parser hardening (Task 8 Finding 2):
+    # div-depth tracking, title-link selection via a-text-normal/s-line-clamp
+    # with the _saw_title_link latch, capture-guard mutual exclusion, and K/M
+    # review decoding. Validated previously only by a one-off live smoke.
+    html = REAL_DOM_FIX.read_text(encoding="utf-8")
+    products = extract_products_from_html(html)
+
+    assert len(products) == 1
+    p = products[0]
+    assert p["asin"] == "B08N5WRWNW"
+
+    # The real title link must win over the aria-hidden image link and the
+    # color-swatch a-link-normal links that follow it.
+    assert p["title"].startswith("GPX Thick Yoga Mat")
+    assert "Blue" not in p["title"]
+    assert "Black" not in p["title"]
+
+    # a-offscreen price must win over the aria-hidden price-parts span.
+    assert p["price"] == 36.98
+    assert p["rating"] == 4.5
+    # "1.2K" must decode to 1200.
+    assert p["reviews"] == 1200
 

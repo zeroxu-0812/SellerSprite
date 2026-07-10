@@ -148,7 +148,16 @@ def search_amazon_paginated(keyword: str, config: dict) -> list:
     all_products = []
     seen = set()
     for page in range(1, int(az.get("max_pages", 1)) + 1):
-        products = search_amazon(keyword, config, page=page)
+        try:
+            products = search_amazon(keyword, config, page=page)
+        except Exception as e:
+            # A single blocked/timeout/captcha page must not abort the whole
+            # crawl: skip it and keep whatever earlier pages yielded. Playwright
+            # raises playwright.sync_api.TimeoutError (a subclass of Exception)
+            # on navigation/wait timeouts; other transient fetch errors land
+            # here too. Printed, not swallowed.
+            print(f"⚠️ 第 {page} 页抓取失败，跳过: {e}")
+            continue
         for p in products:
             if p["asin"] not in seen:
                 seen.add(p["asin"])

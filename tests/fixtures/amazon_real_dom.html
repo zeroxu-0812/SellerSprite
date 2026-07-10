@@ -1,0 +1,64 @@
+<!--
+  Real-DOM fixture for parser regression (Task 8 Finding 2).
+
+  Mimics real Amazon search-result markup nesting:
+    - data-asin card with deeply nested <div>s (exercises div-depth tracking)
+    - real title link carrying a-link-normal + s-line-clamp (sets _saw_title_link latch)
+    - a color-swatch / variation a-link-normal link (must NOT override the title)
+    - an aria-hidden image link (must NOT be picked as the title)
+    - a-price / a-offscreen price
+    - a-icon-alt rating
+    - reviews span with a K-suffixed value ("1.2K" -> 1200)
+
+  The real title link intentionally appears BEFORE the swatch/image links so the
+  test exercises the _saw_title_link latch: once the rich title link is captured,
+  the later plain a-link-normal swatch link must be rejected.
+-->
+<div class="s-result-list s-search-results">
+
+  <div data-asin="B08N5WRWNW" data-component-type="s-search-result" class="s-result-item">
+
+    <div class="sg-col-inner">
+      <div class="a-section a-spacing-none">
+
+        <div class="a-section a-spacing-small">
+          <span class="a-list-item">
+            <a class="a-link-normal s-no-outline" aria-hidden="true" tabindex="-1" href="/l/111/imageribbon">
+              <img alt="Yoga Mat" src="https://m.media-amazon.com/images/I/41abc.jpg"/>
+            </a>
+          </span>
+        </div>
+
+        <div class="a-section a-spacing-none apb-browse-colormode">
+          <a class="a-link-normal a-text-normal s-line-clamp-2 s-link-style a-text-normal"
+             href="/GPX-Mat-Thick-Exercise-Fitness/dp/B08N5WRWNW">
+            <span class="a-size-base-plus a-color-base a-text-normal">GPX Thick Yoga Mat 1/2 Inch Extra Long Extra Wide NBR Foam Pad Non-Slip Exercise Mat for Home Gym Workout Fitness</span>
+          </a>
+
+          <div class="a-row a-size-small">
+            <a class="a-link-normal swatchElement" href="/color/blue/dp/B08N5WRX11/ref=swatch_c_1">
+              <span class="a-size-base">Blue</span>
+            </a>
+            <a class="a-link-normal swatchElement" href="/color/black/dp/B08N5WRX22/ref=swatch_c_2">
+              <span class="a-size-base">Black</span>
+            </a>
+          </div>
+
+          <div class="a-row a-size-base a-color-base">
+            <span class="a-icon-alt">4.5 out of 5 stars</span>
+            <span class="a-size-base s-underline-text">1.2K</span>
+          </div>
+
+          <div class="a-row a-size-base a-color-base">
+            <span class="a-price" data-a-size="l" data-a-color="base">
+              <span class="a-offscreen">$36.98</span>
+              <span aria-hidden="true"><span class="a-price-symbol">$</span><span class="a-price-whole">36<span class="a-price-decimal">.</span></span><span class="a-price-fraction">98</span></span>
+            </span>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>

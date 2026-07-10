@@ -15,8 +15,20 @@ def test_basic_overview():
     assert ov["avg_reviews"] == round((100 + 200 + 50) / 3, 2)
     assert ov["total_units"] == 170
     assert ov["total_amount"] == 3800.0
-    # Top10 集中度：Top1(=90) 占 90/170
-    assert ov["top10_units_share"] == round(90 / 170, 4)
+    # Top10 集中度：只有 3 行，全部落入 top-10，占比为 1.0
+    assert ov["top10_units_share"] == 1.0
+
+
+def test_top10_excludes_bottom():
+    """样本 > 10 行时，仅销量前 10 名计入 top10_units_share。"""
+    rows = [
+        {"asin": f"A{i}", "price": 10.0, "rating": 4.0, "reviews": 10,
+         "units": 10, "amount": 100.0}
+        for i in range(12)
+    ]
+    ov = derive_market_overview(rows, result_count=10000)
+    # 每行 units=10，total=120，top-10=100
+    assert ov["top10_units_share"] == round(100 / 120, 4)
 
 
 def test_empty_rows():

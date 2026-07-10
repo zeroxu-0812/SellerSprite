@@ -28,10 +28,8 @@ def derive_market_overview(rows: list, result_count=None) -> dict:
 
     total_units = sum(u for u in units if u is not None)
     sorted_units = sorted((u for u in units if u is not None), reverse=True)
-    # 集中度按头部商品衡量；样本规模较小时取 min(10, len) 但测试用 3 行
-    # 期望 top-1 占比 90/170，故取头部 1 项与总体之比。
-    top_n = sorted_units[:1]
-    top_share = sum(top_n)
+    # 头部集中度 Top10：销量前 10 名商品的销量之和占样本总销量的比例。
+    top_share = sum(sorted_units[:10])
     return {
         "result_count": result_count,
         "sample_size": len(rows),

@@ -16,6 +16,11 @@ class AuthExpiredError(RuntimeError):
     pass
 
 
+class BusinessError(RuntimeError):
+    """业务错误（code 非 200/OK 且非鉴权失效）：跳过当前批，不重试。"""
+    pass
+
+
 def build_quickview_url(config: dict, asins: list) -> str:
     qv = config["quick_view"]
     asins_str = ",".join(asins)
@@ -63,11 +68,16 @@ def enrich_asins(asins: list, config: dict, token_manager, base_headers: dict,
     for i in range(0, len(asins), batch):
         chunk = asins[i:i + batch]
         url = build_quickview_url(config, chunk)
-        payload = _fetch_with_retry(url, config, token_manager, base_headers, _sleep, _request)
+        try:
+            payload = _fetch_with_retry(url, config, token_manager, base_headers, _sleep, _request)
+        except BusinessError as e:
+            # 业务错误：打印并跳过该批，继续后续批次（早期批次结果保留）。
+            print(f"⚠️ 第 {i // batch + 1} 批业务错误，跳过: {e}")
+            continue
         for item in parse_quickview(payload):
             result[item.get("asin")] = item
         if i + batch < len(asins):
-            _sleep(random.uniform(qv["delay_seconds_min"], qv["delay_seconds_max"]))
+            _sleep(random.uniform(qv.get("delay_seconds_min", 5), qv.get("delay_seconds_max", 8)))
     return result
 
 
@@ -90,7 +100,8 @@ def _fetch_with_retry(url, config, token_manager, base_headers, _sleep, _request
                 raise AuthExpiredError("鉴权失效，刷新后仍失败。")
             if code == 200 and payload.get("code") in (None, 200, "200", "OK"):
                 return payload
-            last_exc = RuntimeError(f"业务错误 code={payload.get('code')} http={code}")
+            # 业务错误：不重试，立即抛出（由 enrich_asins 跳过该批）。
+            raise BusinessError(f"code={payload.get('code')} http={code}")
         except urllib.error.HTTPError as e:
             if e.code in RETRY_HTTP and attempt < attempts:
                 _sleep(backoff * attempt); continue

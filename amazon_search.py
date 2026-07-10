@@ -134,12 +134,14 @@ def search_amazon(keyword: str, config: dict, page: int = 1) -> list:
     url = f"{az['base_url']}/s?" + urllib.parse.urlencode({"k": keyword, "page": page})
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        ctx = browser.new_context(user_agent=az["user_agent"])
-        page_obj = ctx.new_page()
-        page_obj.goto(url, timeout=60000)
-        page_obj.wait_for_selector("[data-asin]", timeout=30000)
-        html = page_obj.content()
-        browser.close()
+        try:
+            ctx = browser.new_context(user_agent=az["user_agent"])
+            page_obj = ctx.new_page()
+            page_obj.goto(url, timeout=60000)
+            page_obj.wait_for_selector("[data-asin]", timeout=30000)
+            html = page_obj.content()
+        finally:
+            browser.close()
     return extract_products_from_html(html)
 
 

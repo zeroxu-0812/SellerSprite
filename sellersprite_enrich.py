@@ -6,7 +6,8 @@ import urllib.request
 import urllib.error
 from sellersprite_signing import sellersprite_token, extension_version_token
 
-AUTH_EXPIRED_CODES = {401, "401", "UNAUTHORIZED", "TOKEN_EXPIRED", "AUTH_EXPIRED"}
+AUTH_EXPIRED_CODES = {401, "401", "UNAUTHORIZED", "TOKEN_EXPIRED", "AUTH_EXPIRED",
+                      "ERR_NEED_RE_AUTHORIZED", "ERR_GLOBAL_SESSION_EXPIRED"}
 AUTH_EXPIRED_MSG = ("令牌过期", "token expired", "token invalid", "auth expired",
                     "unauthorized", "登录失效", "重新登录")
 RETRY_HTTP = {408, 429} | set(range(500, 600))

@@ -41,6 +41,9 @@ def test_is_auth_expired():
     assert is_auth_expired({"message": "令牌过期"}, 200) is True
     assert is_auth_expired({"code": "OK"}, 200) is False
     assert is_auth_expired({}, 401) is True
+    # 真实抓包观察到的 sellersprite 会话过期码（不只靠 message 文本判定）
+    assert is_auth_expired({"code": "ERR_NEED_RE_AUTHORIZED", "message": "令牌过期，请退出再重新登录。"}, 200) is True
+    assert is_auth_expired({"code": "ERR_GLOBAL_SESSION_EXPIRED"}, 200) is True
 
 
 # --- enrich_asins: auth self-heal & business-error skip (Finding 2 & 4) ---

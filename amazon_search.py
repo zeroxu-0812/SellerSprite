@@ -19,8 +19,20 @@ def parse_rating(text: str):
 
 
 def parse_reviews(text: str):
-    m = re.search(r"([\d,]+)", text or "")
-    return int(m.group(1).replace(",", "")) if m else None
+    """Parse review counts. Handles plain ints, comma-grouped ('1,0279'),
+    and K/M suffixes as seen on live Amazon ('(69.4K)', '1.2M')."""
+    if not text:
+        return None
+    m = re.search(r"([\d,]+(?:\.\d+)?)\s*([KkMm])?", text)
+    if not m:
+        return None
+    num = float(m.group(1).replace(",", ""))
+    suffix = (m.group(2) or "").upper()
+    if suffix == "K":
+        num *= 1_000
+    elif suffix == "M":
+        num *= 1_000_000
+    return int(num)
 
 
 class _AmazonParser(HTMLParser):
@@ -28,47 +40,85 @@ class _AmazonParser(HTMLParser):
         super().__init__()
         self.products = []
         self._asin_ctx = None
+        self._div_depth = 0  # nesting depth of the data-asin card
         self._capture = None  # ("title"|"price"|"rating"|"reviews", buffer)
+        self._saw_title_link = False  # per-card: prefer the rich title link
 
     def handle_starttag(self, tag, attrs):
         attrs_d = dict(attrs)
-        if tag == "div" and attrs_d.get("data-asin"):
+        if tag == "div" and attrs_d.get("data-asin") and self._asin_ctx is None:
             asin = attrs_d["data-asin"]
             if ASIN_RE.match(asin):
                 self._asin_ctx = {"asin": asin}
+                self._div_depth = 1
+                self._saw_title_link = False
+                return
         if self._asin_ctx is None:
             return
+        if tag == "div":
+            self._div_depth += 1
         cls = attrs_d.get("class", "") or ""
-        if tag == "a" and "a-link-normal" in cls and self._capture is None:
-            self._capture = ("title", [])
-        elif tag == "span" and "a-offscreen" in cls:
-            self._capture = ("price", [])
-        elif tag == "span" and "a-icon-alt" in cls:
-            self._capture = ("rating", [])
-        elif tag == "span" and "s-underline-text" in cls:
-            self._capture = ("reviews", [])
+        if self._capture is None:
+            if tag == "a" and "title" not in self._asin_ctx:
+                # The real product title link carries s-line-clamp / a-text-normal.
+                # Color-swatch and other ancillary a-link-normal links do not, so
+                # requiring one of those markers avoids grabbing the wrong link.
+                is_title = (
+                    "a-link-normal" in cls
+                    and attrs_d.get("aria-hidden") != "true"
+                    and ("s-line-clamp" in cls or "a-text-normal" in cls)
+                )
+                # Fixture has only a plain "a-link-normal" title link; accept it as
+                # a fallback when no richer marker is present.
+                is_fallback = (
+                    "a-link-normal" in cls
+                    and attrs_d.get("aria-hidden") != "true"
+                    and "s-no-outline" not in cls
+                )
+                if is_title or (is_fallback and not self._saw_title_link):
+                    if is_title:
+                        self._saw_title_link = True
+                    self._capture = ("title", [])
+            elif tag == "span" and "a-offscreen" in cls:
+                self._capture = ("price", [])
+            elif tag == "span" and "a-icon-alt" in cls:
+                self._capture = ("rating", [])
+            elif tag == "span" and "s-underline-text" in cls:
+                self._capture = ("reviews", [])
+
+    def handle_startendtag(self, tag, attrs):
+        # self-closing tags (e.g. <img/>); don't inflate div depth
+        if self._asin_ctx is None:
+            return
 
     def handle_data(self, data):
         if self._capture is not None:
             self._capture[1].append(data)
 
     def handle_endtag(self, tag):
-        if self._capture is not None and tag == "span":
-            kind, buf = self._capture
-            text = "".join(buf).strip()
-            if kind == "title" and self._asin_ctx is not None and "title" not in self._asin_ctx:
-                self._asin_ctx["title"] = text
-            elif kind == "price":
-                self._asin_ctx["price"] = parse_price(text)
-            elif kind == "rating":
-                self._asin_ctx["rating"] = parse_rating(text)
-            elif kind == "reviews":
-                self._asin_ctx["reviews"] = parse_reviews(text)
-            self._capture = None
+        if self._capture is not None:
+            kind = self._capture[0]
+            # Title spans the whole <a> element (which may contain nested
+            # <span>s); flush it on </a>. The other captures are single spans.
+            flush_tag = "a" if kind == "title" else "span"
+            if tag == flush_tag:
+                _, buf = self._capture
+                text = "".join(buf).strip()
+                if kind == "title" and self._asin_ctx is not None and "title" not in self._asin_ctx:
+                    self._asin_ctx["title"] = re.sub(r"\s+", " ", text)
+                elif kind == "price":
+                    self._asin_ctx["price"] = parse_price(text)
+                elif kind == "rating":
+                    self._asin_ctx["rating"] = parse_rating(text)
+                elif kind == "reviews":
+                    self._asin_ctx["reviews"] = parse_reviews(text)
+                self._capture = None
         if tag == "div" and self._asin_ctx is not None:
-            if self._asin_ctx.get("title"):
-                self.products.append(self._asin_ctx)
-            self._asin_ctx = None
+            self._div_depth -= 1
+            if self._div_depth == 0:
+                if self._asin_ctx.get("title"):
+                    self.products.append(self._asin_ctx)
+                self._asin_ctx = None
 
 
 def extract_products_from_html(html: str) -> list:

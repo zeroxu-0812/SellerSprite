@@ -1,0 +1,25 @@
+{
+  "station": "US",
+  "language": "zh_CN",
+  "version": "5.0.4",
+  "extension_id": "lnbmbgocenenhhhdojdielgnmeflbnfb",
+  "source": "chrome",
+  "quick_view": {
+    "base_url": "https://e.sellersprite.com/v2/extension/competitor-lookup/quick-view",
+    "batch_size": 20,
+    "with_relation": true,
+    "with_sale_trend": true,
+    "request_timeout_seconds": 50,
+    "retry_attempts": 2,
+    "retry_backoff_seconds": 2,
+    "delay_seconds_min": 5,
+    "delay_seconds_max": 8
+  },
+  "amazon": {
+    "base_url": "https://www.amazon.com",
+    "max_pages": 1,
+    "page_delay_seconds_min": 2,
+    "page_delay_seconds_max": 5,
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+  }
+}

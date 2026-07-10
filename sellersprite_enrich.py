@@ -49,9 +49,21 @@ def is_auth_expired(payload: dict, http_code: int) -> bool:
     return any(k.lower() in msg for k in AUTH_EXPIRED_MSG)
 
 
+# sellersprite 对"无数据"用 -1 哨兵（如 units=-1）；这些字段真实值不可能为 -1，归一为 None。
+_NO_DATA_FIELDS = ("units", "month_units", "amount", "amount_growth", "profit", "fba",
+                   "sellers", "variations", "reviews", "lqs")
+
+
 def parse_quickview(payload: dict) -> list:
     data = payload.get("data") or {}
-    return list(data.get("items") or [])
+    items = list(data.get("items") or [])
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        for key in _NO_DATA_FIELDS:
+            if item.get(key) == -1:
+                item[key] = None
+    return items
 
 
 def _do_request(url: str, headers: dict, timeout: float):

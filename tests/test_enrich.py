@@ -36,6 +36,20 @@ def test_parse_quickview_items():
     assert items[0]["amount"] == 140302.45
 
 
+def test_parse_quickview_normalizes_no_data_sentinel():
+    # sellersprite 用 -1 表示"无数据"（真实抓包观测），应归一为 None，避免污染求和/输出
+    payload = {"data": {"items": [{"asin": "X", "units": -1, "amount": -1, "profit": -1},
+                                  {"asin": "Y", "units": 3537, "amount": 89026.29}]}, "code": "OK"}
+    items = parse_quickview(payload)
+    assert items[0]["units"] is None
+    assert items[0]["amount"] is None
+    assert items[0]["profit"] is None
+    assert items[1]["units"] == 3537  # 真实值不受影响
+    # 负值合法的字段（如 bsr_cr 增长率）不在哨兵清单内，保留
+    payload2 = {"data": {"items": [{"asin": "Z", "bsr_cr": -22.37}]}}
+    assert parse_quickview(payload2)[0]["bsr_cr"] == -22.37
+
+
 def test_is_auth_expired():
     assert is_auth_expired({"code": 401}, 200) is True
     assert is_auth_expired({"message": "令牌过期"}, 200) is True

@@ -65,7 +65,7 @@ def test_process_keyword_end_to_end(monkeypatch, tmp_path):
     data_lines = [ln for ln in csv_text.splitlines()[1:] if ln.strip()]
     assert len(data_lines) == 2
 
-    # 增强字段确实合进了合并记录
+    # 单源 flatten 后增强字段仍在（competitor-lookup 数据）
     assert "1000" in csv_text or "29990" in csv_text
 
 

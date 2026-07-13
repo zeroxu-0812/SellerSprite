@@ -8,7 +8,7 @@ from pathlib import Path
 from sellersprite_auth import KeepaTokenManager
 from amazon_search import search_amazon_paginated
 from sellersprite_enrich import lookup_asins, AuthExpiredError
-from field_merge import merge_record, flatten_record
+from field_merge import flatten_record
 from market_overview import derive_market_overview
 from keyword_output import output_dir_for, write_products, write_market_overview
 
@@ -29,7 +29,22 @@ def load_env():
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+def _emit_rows(rows: list, name: str) -> dict:
+    """统一收尾：派生市场总览 + 落地 CSV/JSON + 打印摘要。rows 为扁平后的单源商品行。"""
+    overview = derive_market_overview(rows, result_count=None)
+    out_dir = output_dir_for(name, base=str(ROOT / "output"))
+    write_products(rows, out_dir, name)
+    write_market_overview(overview, out_dir, name)
+    print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
+    print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
+    print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")
+    print(f"   Top10 集中度 {overview['top10_units_share']}")
+    print(f"💾 已保存到 {out_dir}")
+    return {"products": len(rows), "out_dir": str(out_dir)}
+
+
 def process_keyword(keyword: str, config: dict, token_manager) -> dict:
+    """关键词模式：亚马逊搜索拿 ASIN 排序列表 → competitor-lookup 全量增强（单源，准确 USD）。"""
     print(f"\n🔍 搜索亚马逊: {keyword}")
     products = search_amazon_paginated(keyword, config)
     print(f"   亚马逊抓到 {len(products)} 个商品")
@@ -39,22 +54,14 @@ def process_keyword(keyword: str, config: dict, token_manager) -> dict:
 
     asins = [p["asin"] for p in products]
     print(f"   competitor-lookup 全量增强: {len(asins)} 个 ASIN ...")
-    enriched = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
-    print(f"   卖家精灵返回 {len(enriched)} 条（每条 57 字段）")
-
-    merged = [merge_record(p, enriched.get(p["asin"], {})) for p in products]
-    overview = derive_market_overview(merged, result_count=None)
-
-    out_dir = output_dir_for(keyword, base=str(ROOT / "output"))
-    write_products(merged, out_dir, keyword)
-    write_market_overview(overview, out_dir, keyword)
-
-    print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
-    print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
-    print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")
-    print(f"   Top10 集中度 {overview['top10_units_share']}")
-    print(f"💾 已保存到 {out_dir}")
-    return {"products": len(merged), "out_dir": str(out_dir)}
+    items = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
+    print(f"   卖家精灵返回 {len(items)} 条（每条 57 字段）")
+    # 按亚马逊关键词排序展开，跳过无增强数据的 ASIN
+    rows = [flatten_record(items[p["asin"]]) for p in products if p["asin"] in items]
+    if not rows:
+        print("   ⚠️ 无增强数据，跳过")
+        return {}
+    return _emit_rows(rows, keyword)
 
 
 ASIN_TOKEN = re.compile(r"[A-Z0-9]{10}")
@@ -76,25 +83,15 @@ def parse_asin_list(text: str) -> list:
 
 
 def process_asins(asins: list, config: dict, token_manager) -> dict:
-    """ASIN 模式：competitor-lookup 单接口拿全量数据（亚马逊字段 + 卖家精灵增强）。"""
+    """ASIN 模式：competitor-lookup 单接口拿全量数据。"""
     print(f"\n🔎 competitor-lookup: {len(asins)} 个 ASIN")
     items = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
     print(f"   卖家精灵返回 {len(items)} 条（每条 57 字段）")
-    if not items:
+    rows = [flatten_record(it) for it in items.values()]
+    if not rows:
         print("   ⚠️ 无数据")
         return {}
-    rows = [flatten_record(it) for it in items.values()]
-    overview = derive_market_overview(rows, result_count=None)
-    name = f"asins_{len(rows)}"
-    out_dir = output_dir_for(name, base=str(ROOT / "output"))
-    write_products(rows, out_dir, name)
-    write_market_overview(overview, out_dir, name)
-    print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
-    print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
-    print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")
-    print(f"   Top10 集中度 {overview['top10_units_share']}")
-    print(f"💾 已保存到 {out_dir}")
-    return {"products": len(rows), "out_dir": str(out_dir)}
+    return _emit_rows(rows, f"asins_{len(rows)}")
 
 
 def main():

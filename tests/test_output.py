@@ -49,3 +49,21 @@ def test_write_products_xlsx(tmp_path):
     assert ws["A1"].font.bold is True        # 表头加粗
     asins = {ws.cell(row=r, column=header.index("asin") + 1).value for r in range(2, ws.max_row + 1)}
     assert asins == {"A", "B"}
+
+
+def test_write_report(tmp_path):
+    from keyword_output import write_report
+    rows = [{"asin": "B0XXX", "title": "Test Product", "price": 9.99,
+             "units": 400, "questions": None, "url": None,
+             "amz_unit_trend": {"202505": 4000, "202506": 9000}}]
+    d = tmp_path / "out"; d.mkdir()
+    write_report(rows, {"avg_price": 9.99, "sample_size": 1}, d, "kw")
+    text = (d / "report.md").read_text(encoding="utf-8")
+    # 转置表头
+    assert "| 字段 | 值 |" in text
+    # 非空字段 + 中文标签出现
+    assert "ASIN" in text and "月销量" in text and "销量趋势(月)" in text
+    # 仅保留可获取数据：空字段（提问数/链接）不出现其标签
+    assert "提问数" not in text and "链接" not in text
+    # 嵌套数据被美化（JSON）
+    assert "4000" in text and "9000" in text

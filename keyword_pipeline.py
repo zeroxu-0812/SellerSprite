@@ -10,7 +10,7 @@ from amazon_search import search_amazon_paginated
 from sellersprite_enrich import lookup_asins, AuthExpiredError
 from field_merge import flatten_record, large_image_url
 from market_overview import derive_market_overview
-from keyword_output import output_dir_for, write_products, write_market_overview
+from keyword_output import output_dir_for, write_products, write_market_overview, write_report
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
@@ -37,6 +37,7 @@ def _emit_rows(rows: list, name: str) -> dict:
     out_dir = output_dir_for(name, base=str(ROOT / "output"))
     write_products(rows, out_dir, name)
     write_market_overview(overview, out_dir, name)
+    write_report(rows, overview, out_dir, name)   # 易读转置报告
     print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
     print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
     print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")

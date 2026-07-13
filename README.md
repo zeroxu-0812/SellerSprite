@@ -7,13 +7,20 @@
     playwright install chromium
 
 ## 配置鉴权
-复制 `.env.example` 为 `.env`，填入从卖家精灵扩展 devtools 抓包得到的：
-    KEEPA_AUTH_TOKEN=...
-    KEEPA_AUTH_FP=...
-    KEEPA_RANDOM_TOKEN=...
-    KEEPA_COOKIE=...        # 可选
+复制 `.env.example` 为 `.env`。
 
-token 过期后重新抓包更新（或配 KEEPA_TOKEN_REFRESH_COMMAND 自动刷新）。
+**推荐：自动登录刷新**（token 过期自动 signin，不用手动抓）：
+```
+KEEPA_AUTH_FP=<抓包获取，稳定不变>
+KEEPA_RANDOM_TOKEN=<抓包获取，稳定不变>
+KEEPA_AUTH_TOKEN=                          # 留空，自动刷新
+KEEPA_LOGIN_USERNAME=<卖家精灵账号>
+KEEPA_LOGIN_PASSWORD=<密码明文，自动 MD5；或直接填 MD5 哈希并设 MD5=false>
+KEEPA_LOGIN_URL=https://www.sellersprite.com/v2/extension/signin
+```
+`KEEPA_AUTH_FP` / `KEEPA_RANDOM_TOKEN` 从扩展 devtools 抓任意一条 sellersprite 请求的请求头获取（一次即可，长期不变）。
+
+**或手动模式**：直接填 `KEEPA_AUTH_TOKEN`（抓包获取，但几分钟过期，需频繁更新）。
 
 ## 运行
     python keyword_pipeline.py

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""自动登录卖家精灵拿新鲜 token。
+"""自动登录卖家精灵刷新 auth-token。
 
-stdout 输出 JSON：{auth-token, auth-fp, random-token, cookie, ttl_seconds}，
+已实测验证的流程（GET）：
+  GET https://www.sellersprite.com/v2/extension/signin
+      ?email=<user>&password=<md5>&tk=<sig(email+md5pwd)>&version&language&extension&source
+  响应 data.token = 新鲜 auth-token。
+  auth-fp / random-token 是客户端稳定值（signin 不返回），从 .env 读取。
+
+stdout 输出 JSON {auth-token, auth-fp, random-token, cookie, ttl_seconds}，
 供 KeepaTokenManager.refresh_from_command() 消费。
-
-机制：POST 表单到卖家精灵登录 API（email + MD5(password) + tk 签名），
-从响应里提取 token。登录 URL / 字段路径均可在 .env 配置（不同版本可能漂移）。
 """
 import hashlib
 import json
@@ -13,12 +16,15 @@ import os
 import sys
 from pathlib import Path
 from urllib.error import HTTPError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 from urllib.request import Request, urlopen
 
 from sellersprite_signing import sellersprite_token, extension_version_token
 
+DEFAULT_LOGIN_URL = "https://www.sellersprite.com/v2/extension/signin"
 EXTENSION_ID = "lnbmbgocenenhhhdojdielgnmeflbnfb"
+DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36")
 
 
 def _truthy(name: str, default: bool = False) -> bool:
@@ -41,7 +47,6 @@ def load_env() -> None:
 
 
 def _get_by_path(data, path: str):
-    """按 'a.b.c' 取嵌套值。"""
     cur = data
     for seg in (path or "").split("."):
         seg = seg.strip()
@@ -54,7 +59,7 @@ def _get_by_path(data, path: str):
     return cur
 
 
-def build_payload() -> bytes:
+def build_signin_url() -> str:
     email = (os.getenv("KEEPA_LOGIN_USERNAME") or "").strip()
     password = (os.getenv("KEEPA_LOGIN_PASSWORD") or "").strip()
     if not email or not password:
@@ -63,31 +68,29 @@ def build_payload() -> bytes:
         password = hashlib.md5(password.encode("utf-8")).hexdigest()
     version = (os.getenv("KEEPA_LOGIN_VERSION") or "5.0.4").strip()
     tk = sellersprite_token(email, password, ext_version=extension_version_token(version))
-    payload = {
+    params = {
         "email": email,
         "password": password,
+        "tk": tk,
         "version": version,
         "language": (os.getenv("KEEPA_LOGIN_LANGUAGE") or "zh_CN").strip(),
         "extension": (os.getenv("KEEPA_LOGIN_EXTENSION_ID") or EXTENSION_ID).strip(),
         "source": (os.getenv("KEEPA_LOGIN_SOURCE") or "chrome").strip(),
-        "tk": tk,
     }
-    return urlencode(payload).encode("utf-8")
+    base = (os.getenv("KEEPA_LOGIN_URL") or DEFAULT_LOGIN_URL).strip()
+    parsed = urlparse(base)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(params)
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params,
+                       urlencode(query), parsed.fragment))
 
 
 def login(_urlopen=urlopen) -> dict:
-    url = (os.getenv("KEEPA_LOGIN_URL") or "").strip()
-    if not url:
-        raise RuntimeError("缺少 KEEPA_LOGIN_URL（卖家精灵登录 API 地址，需抓包获取）")
-    body = build_payload()
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Accept": "application/json, text/plain, */*",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-    req = Request(url, data=body, headers=headers, method="POST")
+    url = build_signin_url()
+    req = Request(url, headers={"accept": "application/json", "user-agent": DEFAULT_UA}, method="GET")
+    timeout = float(os.getenv("KEEPA_LOGIN_TIMEOUT_SECONDS", "20"))
     try:
-        with _urlopen(req, timeout=float(os.getenv("KEEPA_LOGIN_TIMEOUT_SECONDS", "20"))) as resp:
+        with _urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except HTTPError as exc:
         text = ""
@@ -99,30 +102,24 @@ def login(_urlopen=urlopen) -> dict:
 
 
 def extract_headers(response: dict) -> dict:
-    """从登录响应提取 token。路径可在 .env 配置，默认匹配参考实现。"""
+    """auth-token 来自登录响应；auth-fp/random-token/cookie 来自 .env（客户端稳定值）。"""
     headers = {}
-    paths = {
-        "auth-token": (os.getenv("KEEPA_RESPONSE_AUTH_TOKEN_PATH") or "data.token").strip(),
-        "auth-fp": (os.getenv("KEEPA_RESPONSE_AUTH_FP_PATH") or "auth-fp").strip(),
-        "random-token": (os.getenv("KEEPA_RESPONSE_RANDOM_TOKEN_PATH") or "random-token").strip(),
-        "cookie": (os.getenv("KEEPA_RESPONSE_COOKIE_PATH") or "cookie").strip(),
-    }
-    for key, path in paths.items():
-        value = _get_by_path(response, path)
-        if value is not None and str(value).strip():
-            headers[key] = str(value).strip()
-    # 缺失字段回退到现有 env（支持"只刷部分"）
-    fallback = {"auth-token": "KEEPA_AUTH_TOKEN", "auth-fp": "KEEPA_AUTH_FP",
-                "random-token": "KEEPA_RANDOM_TOKEN", "cookie": "KEEPA_COOKIE"}
-    for key, env_key in fallback.items():
-        if not headers.get(key):
-            value = (os.getenv(env_key) or "").strip()
-            if value:
-                headers[key] = value
-    missing = [k for k in ("auth-token", "auth-fp", "random-token") if not headers.get(k)]
+    token_path = (os.getenv("KEEPA_RESPONSE_AUTH_TOKEN_PATH") or "data.token").strip()
+    token = _get_by_path(response, token_path)
+    if token is not None and str(token).strip():
+        headers["auth-token"] = str(token).strip()
+    for key, env_key in (("auth-fp", "KEEPA_AUTH_FP"),
+                         ("random-token", "KEEPA_RANDOM_TOKEN"),
+                         ("cookie", "KEEPA_COOKIE")):
+        value = (os.getenv(env_key) or "").strip()
+        if value:
+            headers[key] = value
+    if not headers.get("auth-token"):
+        raise RuntimeError("登录响应未取到 auth-token，请检查 KEEPA_RESPONSE_AUTH_TOKEN_PATH")
+    missing = [k for k in ("auth-fp", "random-token") if not headers.get(k)]
     if missing:
-        raise RuntimeError("登录响应未取到完整 token，缺少: " + ", ".join(missing) +
-                           "。请检查 KEEPA_RESPONSE_*_PATH。")
+        raise RuntimeError("缺少客户端值（.env）: " + ", ".join(missing) +
+                           " —— 这两个值稳定不变，从扩展抓包获取一次即可")
     return headers
 
 

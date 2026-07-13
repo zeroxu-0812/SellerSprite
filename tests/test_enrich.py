@@ -4,8 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 import pytest
 from sellersprite_enrich import (AuthExpiredError, BusinessError, build_competitor_url,
-                                 build_quickview_url, enrich_asins, is_auth_expired,
-                                 parse_quickview)
+                                 is_auth_expired, lookup_asins, parse_quickview)
 
 FIX = Path(__file__).parent / "fixtures" / "quickview_single.json"
 
@@ -17,15 +16,6 @@ def _load_config():
         "quick_view": {"base_url": "https://e.sellersprite.com/v2/extension/competitor-lookup/quick-view",
                        "with_relation": True, "with_sale_trend": True},
     }
-
-
-def test_build_url_signature_batch():
-    url = build_quickview_url(_load_config(), ["B091FX694F", "B00NUQT3R2"])
-    q = parse_qs(urlparse(url).query)
-    assert q["tk"] == ["82711.451123"]            # 抓包黄金值
-    assert q["asins"] == ["B091FX694F,B00NUQT3R2"]
-    assert q["version"] == ["5.0.4"]
-    assert q["withRelation"] == ["true"]
 
 
 def test_build_competitor_url_signature():
@@ -72,7 +62,7 @@ def test_is_auth_expired():
     assert is_auth_expired({"code": "ERR_GLOBAL_SESSION_EXPIRED"}, 200) is True
 
 
-# --- enrich_asins: auth self-heal & business-error skip (Finding 2 & 4) ---
+# --- lookup_asins: auth self-heal & business-error skip (Finding 2 & 4) ---
 
 def _enrich_config():
     return {
@@ -115,7 +105,7 @@ def test_auth_self_heal_then_success():
         return 200, success_payload
 
     tm = _StubTokenManager()
-    result = enrich_asins(["B0GDY15VMN"], _enrich_config(), tm, {},
+    result = lookup_asins(["B0GDY15VMN"], _enrich_config(), tm, {},
                           _sleep=lambda _t: None, _request=fake_request)
 
     assert result == {"B0GDY15VMN": {"asin": "B0GDY15VMN", "units": 1754}}
@@ -132,7 +122,7 @@ def test_auth_expired_persists_raises():
 
     tm = _StubTokenManager()
     with pytest.raises(AuthExpiredError):
-        enrich_asins(["B0GDY15VMN"], _enrich_config(), tm, {},
+        lookup_asins(["B0GDY15VMN"], _enrich_config(), tm, {},
                       _sleep=lambda _t: None, _request=fake_request)
     # heal attempted exactly once before giving up
     assert tm.invalidate_calls == 1
@@ -152,7 +142,7 @@ def test_business_error_skips_batch_and_continues():
         return 200, {"code": "OK", "data": {"items": [{"asin": "B_OK"}]}}
 
     tm = _StubTokenManager()
-    result = enrich_asins(["B_OK1", "B_MID", "B_OK2"], cfg, tm, {},
+    result = lookup_asins(["B_OK1", "B_MID", "B_OK2"], cfg, tm, {},
                           _sleep=lambda _t: None, _request=fake_request)
 
     # The two OK batches collapsed to the same asin key; the mid batch was skipped.
@@ -170,7 +160,7 @@ def test_delay_key_defaults_when_omitted():
         return 200, {"code": "OK", "data": {"items": [{"asin": "X"}]}}
 
     slept = []
-    result = enrich_asins(["A", "B", "C"], cfg, _StubTokenManager(), {},
+    result = lookup_asins(["A", "B", "C"], cfg, _StubTokenManager(), {},
                           _sleep=lambda t: slept.append(t), _request=fake_request)
     assert len(result) == 1  # all batches → asin "X"
     # exactly two between-batch sleeps (3 batches), and within default 5..8 range

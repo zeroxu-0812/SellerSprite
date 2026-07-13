@@ -28,7 +28,7 @@ KEEPA_LOGIN_URL=https://www.sellersprite.com/v2/extension/signin
 
 ## 输出
 `output/keyword_{关键词}_{日期}/`：
-- `products.csv` / `products.json`：每个商品一行；冲突字段格式 `值(亚马逊) / 值(卖家精灵)`
+- `products.csv` / `products.json`：每个商品一行，competitor-lookup 单源全量字段（57 字段：准确 USD 价 + 销量/销售额/利润 + `amz_unit_trends` 销量趋势 + `seller_dto` 卖家公司 + 评论增长等）
 - `market_overview.csv` / `market_overview.json`：派生市场总览
 
 ## 测试

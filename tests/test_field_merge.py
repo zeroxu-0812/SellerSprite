@@ -1,4 +1,4 @@
-from field_merge import camel_to_snake, flatten_record, merge_record, to_number
+from field_merge import camel_to_snake, flatten_record, to_number
 
 
 def test_camel_to_snake():
@@ -20,31 +20,6 @@ def test_flatten_dict_value():
     flat = flatten_record(rec)
     assert flat["relation_keyword__ads"] == 30
     assert flat["relation_keyword__total"] == 245
-
-
-def test_merge_single_source_no_annotation():
-    amazon = {"asin": "B0GDY15VMN", "price": 79.99, "rating": 4.6}
-    enrich = {"asin": "B0GDY15VMN", "units": 1754, "amount": 140302.45}
-    merged = merge_record(amazon, enrich)
-    assert merged["asin"] == "B0GDY15VMN"
-    assert merged["price"] == 79.99          # 仅亚马逊有，裸值
-    assert merged["units"] == 1754            # 仅卖家精灵有，裸值
-    assert merged["amount"] == 140302.45
-
-
-def test_merge_conflict_annotated():
-    amazon = {"asin": "X", "sellers": 6, "bsr": 4907}
-    enrich = {"asin": "X", "sellers": 4, "bsr": 4470}
-    merged = merge_record(amazon, enrich)
-    assert merged["sellers"] == "6(亚马逊) / 4(卖家精灵)"
-    assert merged["bsr"] == "4907(亚马逊) / 4470(卖家精灵)"
-
-
-def test_merge_same_value_single():
-    amazon = {"asin": "X", "brand": "gogoKIWI"}
-    enrich = {"asin": "X", "brand": "gogoKIWI"}
-    merged = merge_record(amazon, enrich)
-    assert merged["brand"] == "gogoKIWI"
 
 
 def test_to_number():

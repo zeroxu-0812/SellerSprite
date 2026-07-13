@@ -1,13 +1,10 @@
-"""字段归一、扁平化、按来源合并。"""
+"""字段归一、扁平化。"""
 import json
 import re
 
 CANONICAL_FIELD_MAP = {
     "buyPrice": "buy_price",
 }
-
-AMAZON = "亚马逊"
-SELLERSPRITE = "卖家精灵"
 
 
 def camel_to_snake(s: str) -> str:
@@ -49,22 +46,6 @@ def flatten_record(rec: dict) -> dict:
     out = {}
     _flatten(rec, "", out)
     return out
-
-
-def merge_record(amazon: dict, enrich: dict) -> dict:
-    a = flatten_record(amazon or {})
-    b = flatten_record(enrich or {})
-    merged = {}
-    for key in set(a) | set(b):
-        av = a.get(key)
-        bv = b.get(key)
-        if av is not None and bv is not None:
-            merged[key] = av if av == bv else f"{av}({AMAZON}) / {bv}({SELLERSPRITE})"
-        elif av is not None:
-            merged[key] = av
-        else:
-            merged[key] = bv
-    return merged
 
 
 def to_number(val):

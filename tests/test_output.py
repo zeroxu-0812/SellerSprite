@@ -28,6 +28,29 @@ def test_write_products_csv_json(tmp_path):
         assert reader[0]["asin"] == "A"
 
 
+def test_products_json_cleaned_dedup_maximal(tmp_path):
+    """products.json 去重 + 最大保留：丢空值与冗余原始 JSON，保留其余能爬到的字段。"""
+    from keyword_output import clean_row
+    rows = [{
+        "asin": "B0XX", "title": "Magnesium", "price": 8.99, "units": 61,
+        "questions": None, "url": None,                       # 空值 → 丢
+        "bsr_list": '[{"rank": 5}]',                          # 冗余原始 JSON → 丢（已有 bsr_list__main_rank）
+        "bsr_list__main_rank": 5, "image_large": "https://x",  # 保留
+    }]
+    d = tmp_path / "out"; d.mkdir()
+    write_products(rows, d, "kw")
+    item = json.loads((d / "products.json").read_text())[0]
+    # 空值已丢
+    assert "questions" not in item and "url" not in item
+    # 冗余原始 JSON 已丢
+    assert "bsr_list" not in item
+    # 能爬到的字段最大保留
+    assert item["asin"] == "B0XX" and item["price"] == 8.99
+    assert item["bsr_list__main_rank"] == 5 and item["image_large"] == "https://x"
+    # clean_row 单测
+    assert clean_row({"a": 1, "b": None, "bsr_list": "[]"}) == {"a": 1}
+
+
 def test_write_market_overview(tmp_path):
     d = tmp_path / "out"; d.mkdir()
     write_market_overview({"avg_price": 20.0, "sample_size": 3}, d, "kw")

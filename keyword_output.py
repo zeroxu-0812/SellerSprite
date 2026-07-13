@@ -18,9 +18,18 @@ def output_dir_for(keyword: str, base: str = "output") -> Path:
     return d
 
 
+def clean_row(row: dict) -> dict:
+    """去重 + 最大保留：丢弃空值，以及与扁平化/标量字段重复的原始 JSON（bsr_list 等）。
+    其余能爬到的字段全部保留。"""
+    return {k: v for k, v in row.items()
+            if k not in _REPORT_SKIP and not _is_empty(v)}
+
+
 def write_products(rows: list, out_dir: Path, keyword: str) -> None:
-    json_path = out_dir / "products.json"
-    json_path.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    # products.json：去重 + 最大保留的清洗版（丢空值与冗余原始 JSON）
+    cleaned = [clean_row(r) for r in rows]
+    (out_dir / "products.json").write_text(
+        json.dumps(cleaned, ensure_ascii=False, indent=2), encoding="utf-8")
 
     csv_path = out_dir / "products.csv"
     headers = sorted({k for r in rows for k in r.keys()})

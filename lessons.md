@@ -61,3 +61,10 @@ quick-view 对无销量数据的 ASIN 返回 `units=-1`（其余字段 None）�
 ### L11. 同字段多源冲突时，单格双值 + 来源标注，优于二选一
 亚马逊与卖家精灵对 BSR/卖家数/重量等同字段各有快照，值常不同（时间差/定义差）。
 **规则**：合并单位=**叶子字段**（先扁平化）；两源不同→`值A(亚马逊) / 值(卖家精灵)` 同格对照；单源→裸值；相同→单值。别丢任何一边。
+
+### L12. `competitor-lookup/US` 是比 `quick-view` 更优的"单接口全量"端点
+- `quick-view` 只给卖家精灵增强（~37 字段），需配合亚马逊抓取 + 合并。
+- `competitor-lookup/US?asins=...`（注意路径无 `/quick-view`）**一个接口返回 57 字段**：亚马逊侧（title/price/rating/reviews/image/url/badges）+ 增强（units/amount/profit/BSR/sellers）+ 独家（`amz_unit_trends` 月销量序列、`seller_dto` 卖家公司全称/地址/国别、`reviews_delta` 评论增长、`questions`）。
+- **关键**：competitor-lookup 的 `price` 是**正确 USD 价**，而亚马逊页面抓取受机房 geo-IP 影响会返回本地货币（HKD 等）。
+- `tk` 签名算法与 quick-view 完全一致（over asins）。
+**规则**：有 ASIN 时优先用 competitor-lookup（全、准、单接口）；关键词模式才需要亚马逊抓取拿 ASIN。两者 CLI 用输入自动路由（纯 ASIN → competitor-lookup，否则 → 关键词）。

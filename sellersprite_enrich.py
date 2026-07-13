@@ -40,6 +40,23 @@ def build_quickview_url(config: dict, asins: list) -> str:
     return f"{qv['base_url']}/{config['station']}?" + "&".join(params)
 
 
+def build_competitor_url(config: dict, asins: list) -> str:
+    """competitor-lookup 端点（单接口全量：亚马逊字段 + 卖家精灵增强 57 字段）。
+    URL 形如 .../competitor-lookup/US?asins=A,B&...（从 quick_view.base_url 去掉 /quick-view 派生）。"""
+    asins_str = ",".join(asins)
+    tk = sellersprite_token(asins_str, ext_version=extension_version_token(config["version"]))
+    base = config["quick_view"]["base_url"].rsplit("/quick-view", 1)[0]  # → .../competitor-lookup
+    params = (
+        f"asins={asins_str}",
+        f"source={config['source']}",
+        f"tk={tk}",
+        f"version={config['version']}",
+        f"language={config['language']}",
+        f"extension={config['extension_id']}",
+    )
+    return f"{base}/{config['station']}?" + "&".join(params)
+
+
 def is_auth_expired(payload: dict, http_code: int) -> bool:
     if http_code == 401:
         return True
@@ -86,6 +103,28 @@ def enrich_asins(asins: list, config: dict, token_manager, base_headers: dict,
         except BusinessError as e:
             # 业务错误：打印并跳过该批，继续后续批次（早期批次结果保留）。
             print(f"⚠️ 第 {i // batch + 1} 批业务错误，跳过: {e}")
+            continue
+        for item in parse_quickview(payload):
+            result[item.get("asin")] = item
+        if i + batch < len(asins):
+            _sleep(random.uniform(qv.get("delay_seconds_min", 5), qv.get("delay_seconds_max", 8)))
+    return result
+
+
+def lookup_asins(asins: list, config: dict, token_manager, base_headers: dict,
+                 _sleep=time.sleep, _request=_do_request) -> dict:
+    """competitor-lookup：给定 ASIN，返回 {asin: item}（每条 57 字段，亚马逊+增强全量）。
+    复用 enrich 的重试/鉴权自愈/业务跳过逻辑，仅换 URL 构造。"""
+    qv = config["quick_view"]
+    batch = qv.get("batch_size", 20)
+    result = {}
+    for i in range(0, len(asins), batch):
+        chunk = asins[i:i + batch]
+        url = build_competitor_url(config, chunk)
+        try:
+            payload = _fetch_with_retry(url, config, token_manager, base_headers, _sleep, _request)
+        except BusinessError as e:
+            print(f"⚠️ competitor-lookup 第 {i // batch + 1} 批业务错误，跳过: {e}")
             continue
         for item in parse_quickview(payload):
             result[item.get("asin")] = item

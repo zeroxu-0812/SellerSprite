@@ -3,8 +3,9 @@ import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 import pytest
-from sellersprite_enrich import (AuthExpiredError, BusinessError, build_quickview_url,
-                                 enrich_asins, is_auth_expired, parse_quickview)
+from sellersprite_enrich import (AuthExpiredError, BusinessError, build_competitor_url,
+                                 build_quickview_url, enrich_asins, is_auth_expired,
+                                 parse_quickview)
 
 FIX = Path(__file__).parent / "fixtures" / "quickview_single.json"
 
@@ -25,6 +26,17 @@ def test_build_url_signature_batch():
     assert q["asins"] == ["B091FX694F,B00NUQT3R2"]
     assert q["version"] == ["5.0.4"]
     assert q["withRelation"] == ["true"]
+
+
+def test_build_competitor_url_signature():
+    # competitor-lookup 端点：tk 仍对 asins 签名；URL 路径 .../competitor-lookup/US
+    url = build_competitor_url(_load_config(), ["B0F1QHNFJP"])
+    q = parse_qs(urlparse(url).query)
+    assert url.startswith("https://e.sellersprite.com/v2/extension/competitor-lookup/US?")
+    assert q["tk"] == ["678545.916405"]            # 抓包黄金值
+    assert q["asins"] == ["B0F1QHNFJP"]
+    assert q["version"] == ["5.0.4"]
+
 
 
 def test_parse_quickview_items():

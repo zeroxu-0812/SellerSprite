@@ -67,3 +67,51 @@ def test_process_keyword_end_to_end(monkeypatch, tmp_path):
 
     # 增强字段确实合进了合并记录
     assert "1000" in csv_text or "29990" in csv_text
+
+
+# --- ASIN 模式（competitor-lookup）---
+
+def test_is_asin_list():
+    assert keyword_pipeline.is_asin_list("B0F1QHNFJP") is True
+    assert keyword_pipeline.is_asin_list("B0F1QHNFJP, B09PVMTM9W") is True
+    assert keyword_pipeline.is_asin_list("B0F1QHNFJP B09PVMTM9W,B06XXP8YRL") is True
+    assert keyword_pipeline.is_asin_list("magnesium cream") is False      # 关键词
+    assert keyword_pipeline.is_asin_list("B0F1QHNFJP extra") is False     # 混了非 ASIN
+    assert keyword_pipeline.is_asin_list("") is False
+
+
+def test_parse_asin_list_dedup():
+    asins = keyword_pipeline.parse_asin_list("b0f1qhnfjp, B0F1QHNFJP, b09pvmtm9w")
+    assert asins == ["B0F1QHNFJP", "B09PVMTM9W"]   # 大写归一 + 去重
+
+
+_FAKE_LOOKUP = {
+    "B0F1QHNFJP": {"asin": "B0F1QHNFJP", "title": "Magnum Solace", "price": 117.53,
+                   "rating": 4.4, "reviews": 7800, "units": 38925, "amount": 388860.75},
+    "B09PVMTM9W": {"asin": "B09PVMTM9W", "title": "LIFE-FLO", "price": 11.45,
+                   "rating": 4.3, "reviews": 3000, "units": 12287, "amount": 143635.03},
+}
+
+
+def _stub_lookup(asins, config, token_manager, base_headers, *args, **kwargs):
+    return {a: dict(_FAKE_LOOKUP[a]) for a in asins if a in _FAKE_LOOKUP}
+
+
+def test_process_asins_end_to_end(monkeypatch, tmp_path):
+    monkeypatch.setattr(keyword_pipeline, "lookup_asins", _stub_lookup)
+    monkeypatch.setattr(keyword_pipeline, "ROOT", tmp_path)
+    config = {"quick_view": {"batch_size": 20, "delay_seconds_min": 0, "delay_seconds_max": 0}}
+    token_manager = KeepaTokenManager(tmp_path / ".token_cache.json")
+
+    result = keyword_pipeline.process_asins(["B0F1QHNFJP", "B09PVMTM9W"], config, token_manager)
+
+    assert result["products"] == 2
+    out_dir = Path(result["out_dir"])
+    assert "asins_2" in out_dir.name                  # output_dir_for 会加 keyword_ 前缀
+    assert (out_dir / "products.csv").exists()
+    assert (out_dir / "market_overview.json").exists()
+    # competitor-lookup 单源数据：title/price/units 都在（单格单值，无来源标注）
+    csv_text = (out_dir / "products.csv").read_text(encoding="utf-8-sig")
+    assert "Magnum Solace" in csv_text
+    assert "38925" in csv_text
+

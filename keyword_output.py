@@ -76,8 +76,7 @@ def write_market_overview(overview: dict, out_dir: Path, keyword: str) -> None:
 FIELD_LABELS = {
     "asin": "ASIN", "parent": "父ASIN", "title": "标题", "brand": "品牌",
     "price": "价格(USD)", "currency": "货币", "symbol": "货币符号",
-    "list_price": "折扣前价格(页面)", "price_current": "折扣后价格(页面)",
-    "discount_off_list_pct": "折扣%(页面)",
+    "list_price": "折扣前价格(USD)", "discount_off_list_pct": "折扣%(页面)",
     "units": "月销量", "month_units": "月出单", "units_growth": "销量增长%",
     "amount": "销售额", "amount_growth": "销售额增长%", "sub_total_amount": "子体销售额",
     "profit": "利润", "fba": "FBA费",
@@ -112,7 +111,7 @@ _REPORT_ORDER = [
     "asin", "parent", "title", "brand", "url",
     "price", "currency", "units", "month_units", "units_growth", "amount", "amount_growth",
     "sub_total_amount", "profit", "fba",
-    "list_price", "price_current", "discount_off_list_pct",
+    "list_price", "discount_off_list_pct",
     "rating", "reviews", "reviews_delta", "reviews_rate", "questions",
     "bsr", "bsr_list__main_rank", "bsr_list__sub_rank", "bsr_label", "bsr_id", "bsr_cr", "bsr_cv", "lqs",
     "node_label_path", "node_label_paths_locale",

@@ -31,6 +31,37 @@ def load_env():
         os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
+def _print_summary(rows: list) -> None:
+    """终端直接打印爬取数据摘要表（关键字段，USD）。"""
+    cols = [("ASIN", "asin", 11), ("标题", "title", 26), ("现价$", "price", 7),
+            ("折扣前$", "list_price", 8), ("折扣%", "discount_off_list_pct", 6),
+            ("月销", "units", 7), ("销售额$", "amount", 11), ("评分", "rating", 5),
+            ("评论", "reviews", 6), ("卖家", "seller_name", 14)]
+
+    def cell(r, key):
+        v = r.get(key)
+        if v is None or v == "":
+            return ""
+        s = str(v)
+        if key == "title":
+            s = s[:24]
+        return s
+
+    header = [name for name, _, _ in cols]
+    table = [[cell(r, k) for _, k, _ in cols] for r in rows]
+    widths = [max(len(header[i]), max((len(row[i]) for row in table), default=0), w)
+              for i, (_, _, w) in enumerate(cols)]
+
+    def fmt(row):
+        return "  ".join(row[i][:widths[i]].ljust(widths[i]) for i in range(len(cols)))
+
+    print()
+    print(fmt(header))
+    print("  ".join("-" * widths[i] for i in range(len(cols))))
+    for row in table:
+        print(fmt(row))
+
+
 def _emit_rows(rows: list, name: str) -> dict:
     """统一收尾：派生市场总览 + 落地 CSV/JSON + 打印摘要。rows 为扁平后的单源商品行。"""
     for r in rows:
@@ -40,6 +71,7 @@ def _emit_rows(rows: list, name: str) -> dict:
     write_products(rows, out_dir, name)
     write_market_overview(overview, out_dir, name)
     write_report(rows, overview, out_dir, name)   # 易读转置报告
+    _print_summary(rows)   # 终端直接展示爬取数据
     print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
     print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
     print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")
@@ -49,7 +81,8 @@ def _emit_rows(rows: list, name: str) -> dict:
 
 
 def _enrich_discount(items: dict, config: dict) -> None:
-    """给每个 ASIN 抓亚马逊详情页，合并页面显示的折扣（折扣前/折扣后/折扣%）进 item。best-effort。"""
+    """抓亚马逊详情页拿【页面显示的折扣%】（币种无关），再用 competitor 的准确 USD 现价
+    反推出 USD 的折扣前价。best-effort。"""
     az = config.get("amazon") or {}
     delay = (az.get("page_delay_seconds_min", 2), az.get("page_delay_seconds_max", 5))
     asins = [a for a in items if a]
@@ -62,7 +95,14 @@ def _enrich_discount(items: dict, config: dict) -> None:
         except Exception as e:  # noqa: BLE001
             print(f"   ⚠️ {asin} 折扣抓取失败，跳过: {e}")
             detail = {}
-        items[asin].update(detail)
+        disc = detail.get("discount_off_list_pct")
+        items[asin]["discount_off_list_pct"] = disc
+        price = items[asin].get("price")           # competitor 准确 USD 现价（折扣后）
+        if disc and isinstance(price, (int, float)) and price > 0:
+            # USD 折扣前价 = 现价 / (1 - 折扣%)
+            items[asin]["list_price"] = round(price / (1 - disc / 100), 2)
+        if i < len(asins) - 1:
+            time.sleep(random.uniform(*delay))
         if i < len(asins) - 1:
             time.sleep(random.uniform(*delay))
 

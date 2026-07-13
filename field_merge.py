@@ -55,3 +55,14 @@ def to_number(val):
         return float(val)
     m = re.search(r"-?\d+(?:\.\d+)?", str(val).replace(",", ""))
     return float(m.group()) if m else None
+
+
+def large_image_url(url):
+    """从亚马逊封面图 URL 派生 1500px 高清版（同图床同 ID，换尺寸标识，无需额外请求）。
+    非亚马逊图床或无 URL 时：原样返回 / None。"""
+    if not url:
+        return None
+    m = re.search(r"/images/I/([A-Za-z0-9]+)\.", url)
+    if not m:
+        return url
+    return f"https://images-na.ssl-images-amazon.com/images/I/{m.group(1)}._AC_SL1500_.jpg"

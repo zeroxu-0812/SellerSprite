@@ -8,7 +8,7 @@ from pathlib import Path
 from sellersprite_auth import KeepaTokenManager
 from amazon_search import search_amazon_paginated
 from sellersprite_enrich import lookup_asins, AuthExpiredError
-from field_merge import flatten_record
+from field_merge import flatten_record, large_image_url
 from market_overview import derive_market_overview
 from keyword_output import output_dir_for, write_products, write_market_overview
 
@@ -31,6 +31,8 @@ def load_env():
 
 def _emit_rows(rows: list, name: str) -> dict:
     """统一收尾：派生市场总览 + 落地 CSV/JSON + 打印摘要。rows 为扁平后的单源商品行。"""
+    for r in rows:
+        r["image_large"] = large_image_url(r.get("image"))   # 派生 1500px 高清封面链接
     overview = derive_market_overview(rows, result_count=None)
     out_dir = output_dir_for(name, base=str(ROOT / "output"))
     write_products(rows, out_dir, name)

@@ -33,3 +33,19 @@ def test_write_market_overview(tmp_path):
     write_market_overview({"avg_price": 20.0, "sample_size": 3}, d, "kw")
     assert (d / "market_overview.csv").exists()
     assert (d / "market_overview.json").exists()
+
+
+def test_write_products_xlsx(tmp_path):
+    from openpyxl import load_workbook
+    rows = [{"asin": "A", "price": 10.5, "tags": ["x", "y"]},
+            {"asin": "B", "price": 20, "tags": []}]
+    d = tmp_path / "out"; d.mkdir()
+    write_products(rows, d, "kw")  # 内部会同步产出 products.xlsx
+    wb = load_workbook(d / "products.xlsx")
+    ws = wb.active
+    header = [c.value for c in ws[1]]
+    assert "asin" in header and "price" in header
+    assert ws.freeze_panes == "A2"           # 冻结首行
+    assert ws["A1"].font.bold is True        # 表头加粗
+    asins = {ws.cell(row=r, column=header.index("asin") + 1).value for r in range(2, ws.max_row + 1)}
+    assert asins == {"A", "B"}

@@ -55,6 +55,7 @@ def test_write_report(tmp_path):
     from keyword_output import write_report
     rows = [{"asin": "B0XXX", "title": "Test Product", "price": 9.99,
              "units": 400, "questions": None, "url": None,
+             "symbol": "Y", "available": 1780694400000, "badges": "[]",
              "amz_unit_trend": {"202505": 4000, "202506": 9000}}]
     d = tmp_path / "out"; d.mkdir()
     write_report(rows, {"avg_price": 9.99, "sample_size": 1}, d, "kw")
@@ -63,7 +64,11 @@ def test_write_report(tmp_path):
     assert "| 字段 | 值 |" in text
     # 非空字段 + 中文标签出现
     assert "ASIN" in text and "月销量" in text and "销量趋势(月)" in text
-    # 仅保留可获取数据：空字段（提问数/链接）不出现其标签
+    # 仅保留可获取数据：None 字段不出现
     assert "提问数" not in text and "链接" not in text
+    # 隐藏特殊/冗余字段
+    assert "货币符号" not in text and "上架时间戳" not in text
+    # 字符串化空容器（badges="[]"）也隐藏
+    assert "标签" not in text
     # 嵌套数据被美化（JSON）
     assert "4000" in text and "9000" in text

@@ -99,6 +99,13 @@ FIELD_LABELS = {
 # 报告里跳过的原始重复字段（信息已在扁平化/标量字段里，避免冗余）
 _REPORT_SKIP = {"bsr_list", "amz_unit_trends", "trends"}
 
+# 报告里隐藏的"特殊/冗余"字段：原始时间戳、内部 ID/码、外文重复标签、可疑标志位等
+_REPORT_HIDE = {
+    "symbol", "available", "node_id_path", "brand_url",
+    "pkg_dimension_type", "pkg_dimension_type_en_label", "pkg_dimension_type_jp_label",
+    "bsr_id", "seller_id", "seller_dto__nation_code", "currency",
+}
+
 _REPORT_ORDER = [
     "asin", "parent", "title", "brand", "url",
     "price", "currency", "units", "month_units", "units_growth", "amount", "amount_growth",
@@ -117,7 +124,12 @@ _REPORT_ORDER = [
 
 
 def _is_empty(v) -> bool:
-    return v is None or v == "" or v == [] or v == {}
+    if v is None or v == "" or v == [] or v == {}:
+        return True
+    # 字符串化的空容器（flatten 后 list/dict 变 JSON 串）："{}"/"[]"/"null"
+    if isinstance(v, str) and v.strip() in {"{}", "[]", "null"}:
+        return True
+    return False
 
 
 def _readable_cell(v) -> str:
@@ -145,7 +157,7 @@ def write_report(rows: list, overview: dict, out_dir: Path, keyword: str) -> Non
         ordered += sorted(k for k in r if k not in _REPORT_ORDER)
         seen = set()
         for k in ordered:
-            if k in seen or k in _REPORT_SKIP:
+            if k in seen or k in _REPORT_SKIP or k in _REPORT_HIDE:
                 continue
             seen.add(k)
             v = r.get(k)

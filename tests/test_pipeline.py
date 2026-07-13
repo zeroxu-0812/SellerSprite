@@ -34,7 +34,7 @@ def _stub_enrich(asins, config, token_manager, base_headers, *args, **kwargs):
 
 def test_process_keyword_end_to_end(monkeypatch, tmp_path):
     monkeypatch.setattr(keyword_pipeline, "search_amazon_paginated", _stub_search)
-    monkeypatch.setattr(keyword_pipeline, "enrich_asins", _stub_enrich)
+    monkeypatch.setattr(keyword_pipeline, "lookup_asins", _stub_enrich)
 
     # 把输出根目录重定向到 tmp，避免污染仓库 output/
     monkeypatch.setattr(keyword_pipeline, "ROOT", tmp_path)

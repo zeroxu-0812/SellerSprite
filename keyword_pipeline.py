@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sellersprite_auth import KeepaTokenManager
 from amazon_search import search_amazon_paginated
-from sellersprite_enrich import enrich_asins, lookup_asins, AuthExpiredError
+from sellersprite_enrich import lookup_asins, AuthExpiredError
 from field_merge import merge_record, flatten_record
 from market_overview import derive_market_overview
 from keyword_output import output_dir_for, write_products, write_market_overview
@@ -38,9 +38,9 @@ def process_keyword(keyword: str, config: dict, token_manager) -> dict:
         return {}
 
     asins = [p["asin"] for p in products]
-    print(f"   增强 quick-view: {len(asins)} 个 ASIN ...")
-    enriched = enrich_asins(asins, config, token_manager, {"accept": "application/json"})
-    print(f"   卖家精灵返回 {len(enriched)} 个增强")
+    print(f"   competitor-lookup 全量增强: {len(asins)} 个 ASIN ...")
+    enriched = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
+    print(f"   卖家精灵返回 {len(enriched)} 条（每条 57 字段）")
 
     merged = [merge_record(p, enriched.get(p["asin"], {})) for p in products]
     overview = derive_market_overview(merged, result_count=None)

@@ -2,12 +2,14 @@
 """编排 + CLI 交互入口。"""
 import json
 import os
+import random
 import re
+import time
 from pathlib import Path
 
 from sellersprite_auth import KeepaTokenManager
-from amazon_search import search_amazon_paginated
-from sellersprite_enrich import lookup_asins, fetch_keepa_batch, keepa_discount, AuthExpiredError
+from amazon_search import search_amazon_paginated, fetch_product_discount
+from sellersprite_enrich import lookup_asins, AuthExpiredError
 from field_merge import flatten_record, large_image_url
 from market_overview import derive_market_overview
 from keyword_output import output_dir_for, write_products, write_market_overview, write_report
@@ -46,19 +48,23 @@ def _emit_rows(rows: list, name: str) -> dict:
     return {"products": len(rows), "out_dir": str(out_dir)}
 
 
-def _enrich_keepa(items: dict, config: dict, token_manager) -> None:
-    """给每个 ASIN 调 keepa 拿价格历史，合并折扣字段（吊牌价/现价/历史高低/折扣%）进 item。"""
+def _enrich_discount(items: dict, config: dict) -> None:
+    """给每个 ASIN 抓亚马逊详情页，合并页面显示的折扣（折扣前/折扣后/折扣%）进 item。best-effort。"""
+    az = config.get("amazon") or {}
+    delay = (az.get("page_delay_seconds_min", 2), az.get("page_delay_seconds_max", 5))
     asins = [a for a in items if a]
     if not asins:
         return
-    print(f"   keepa 价格历史(折扣): {len(asins)} 个 ASIN ...")
-    try:
-        keepa_map = fetch_keepa_batch(asins, config, token_manager, {"accept": "application/json"})
-    except Exception as e:  # noqa: BLE001
-        print(f"   ⚠️ keepa 抓取失败，跳过折扣信息: {e}")
-        return
-    for asin, item in items.items():
-        item.update(keepa_discount(keepa_map.get(asin) or {}))
+    print(f"   亚马逊详情页折扣: {len(asins)} 个 ASIN ...")
+    for i, asin in enumerate(asins):
+        try:
+            detail = fetch_product_discount(asin, config)
+        except Exception as e:  # noqa: BLE001
+            print(f"   ⚠️ {asin} 折扣抓取失败，跳过: {e}")
+            detail = {}
+        items[asin].update(detail)
+        if i < len(asins) - 1:
+            time.sleep(random.uniform(*delay))
 
 
 def process_keyword(keyword: str, config: dict, token_manager) -> dict:
@@ -74,7 +80,7 @@ def process_keyword(keyword: str, config: dict, token_manager) -> dict:
     print(f"   competitor-lookup 全量增强: {len(asins)} 个 ASIN ...")
     items = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
     print(f"   卖家精灵返回 {len(items)} 条（每条 57 字段）")
-    _enrich_keepa(items, config, token_manager)   # keepa 价格历史 → 折扣信息
+    _enrich_discount(items, config)   # 亚马逊详情页折扣信息
     # 按亚马逊关键词排序展开，跳过无增强数据的 ASIN
     rows = [flatten_record(items[p["asin"]]) for p in products if p["asin"] in items]
     if not rows:
@@ -106,7 +112,7 @@ def process_asins(asins: list, config: dict, token_manager) -> dict:
     print(f"\n🔎 competitor-lookup: {len(asins)} 个 ASIN")
     items = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
     print(f"   卖家精灵返回 {len(items)} 条（每条 57 字段）")
-    _enrich_keepa(items, config, token_manager)   # keepa 价格历史 → 折扣信息
+    _enrich_discount(items, config)   # 亚马逊详情页折扣信息
     rows = [flatten_record(it) for it in items.values()]
     if not rows:
         print("   ⚠️ 无数据")

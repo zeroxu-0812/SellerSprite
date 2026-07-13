@@ -4,8 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 import pytest
 from sellersprite_enrich import (AuthExpiredError, BusinessError, build_competitor_url,
-                                 build_keepa_url, is_auth_expired, keepa_discount,
-                                 lookup_asins, parse_quickview)
+                                 is_auth_expired, lookup_asins, parse_quickview)
 
 FIX = Path(__file__).parent / "fixtures" / "quickview_single.json"
 
@@ -27,37 +26,6 @@ def test_build_competitor_url_signature():
     assert q["tk"] == ["678545.916405"]            # 抓包黄金值
     assert q["asins"] == ["B0F1QHNFJP"]
     assert q["version"] == ["5.0.4"]
-
-
-def test_build_keepa_url():
-    url = build_keepa_url(_load_config(), "B0GGNS4P3W")
-    q = parse_qs(urlparse(url).query)
-    assert url.startswith("https://www.sellersprite.com/v2/extension/keepa?")
-    assert q["asin"] == ["B0GGNS4P3W"]
-    assert q["station"] == ["US"]
-    assert q["period"] == ["DAY"]
-    assert q["version"] == ["5.0.4"]
-    assert "." in q["tk"][0]   # tk 已生成
-
-
-def test_keepa_discount():
-    # 真实抓包结构：listPrice/price 为与 times 对齐的值序列
-    data = {"keepa": {
-        "listPrice": [199.99, 41.99, 41.99, 41.99],
-        "price": [41.99, 41.99, 41.99, 9.99, 9.99, 8.99, 8.99],
-    }}
-    d = keepa_discount(data)
-    assert d["list_price"] == 41.99          # 序列最后有效值
-    assert d["price_current"] == 8.99
-    assert d["price_high"] == 41.99
-    assert d["price_low"] == 8.99
-    assert d["discount_off_list_pct"] == round((41.99 - 8.99) / 41.99 * 100, 1)  # ≈78.6
-
-
-def test_keepa_discount_empty():
-    assert keepa_discount({})["list_price"] is None
-    assert keepa_discount({})["discount_off_list_pct"] is None
-
 
 
 def test_parse_quickview_items():

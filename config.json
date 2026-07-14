@@ -4,6 +4,9 @@
   "version": "5.0.4",
   "extension_id": "lnbmbgocenenhhhdojdielgnmeflbnfb",
   "source": "chrome",
+  "concurrency": {
+    "workers": 3
+  },
   "quick_view": {
     "base_url": "https://e.sellersprite.com/v2/extension/competitor-lookup/quick-view",
     "batch_size": 20,
@@ -17,9 +20,6 @@
   },
   "amazon": {
     "base_url": "https://www.amazon.com",
-    "max_pages": 1,
-    "page_delay_seconds_min": 2,
-    "page_delay_seconds_max": 5,
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
   }
 }

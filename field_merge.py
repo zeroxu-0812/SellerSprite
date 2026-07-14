@@ -1,4 +1,5 @@
-"""字段归一、扁平化。"""
+"""字段归一、扁平化、派生字段。"""
+import datetime
 import json
 import re
 
@@ -24,18 +25,25 @@ def _flatten(obj, prefix, out):
         for k, v in list_vals.items():
             _flatten(v, f"{prefix}__{camel_to_snake(k)}" if prefix else camel_to_snake(k), out)
     elif isinstance(obj, list):
-        # bsrList: 取 main=true 的 rank -> __main_rank，其余第一个 -> __sub_rank
+        # bsrList: 取 main=true 的 rank/label -> __main_rank/__main_label，其余第一个 -> __sub_*
         if obj and all(isinstance(x, dict) for x in obj):
             main_rank, sub_rank = None, None
+            main_label, sub_label = None, None
             for item in obj:
                 if item.get("main"):
                     main_rank = item.get("rank")
+                    main_label = item.get("label")
                 elif sub_rank is None:
                     sub_rank = item.get("rank")
+                    sub_label = item.get("label")
             if main_rank is not None:
                 out[f"{prefix}__main_rank"] = main_rank
+            if main_label:
+                out[f"{prefix}__main_label"] = main_label
             if sub_rank is not None:
                 out[f"{prefix}__sub_rank"] = sub_rank
+            if sub_label:
+                out[f"{prefix}__sub_label"] = sub_label
             # 也保留原始 JSON 以不丢信息
             out[prefix] = json.dumps(obj, ensure_ascii=False)
         else:
@@ -59,10 +67,23 @@ def to_number(val):
 
 def large_image_url(url):
     """从亚马逊封面图 URL 派生 1500px 高清版（同图床同 ID，换尺寸标识，无需额外请求）。
+    图片 ID 可能含 + / % 等字符（如 71+oszjnRVL），用非贪婪匹配到尺寸码前的 '.'。
     非亚马逊图床或无 URL 时：原样返回 / None。"""
     if not url:
         return None
-    m = re.search(r"/images/I/([A-Za-z0-9]+)\.", url)
+    m = re.search(r"/images/I/([^/.]+?)\._", url)
     if not m:
         return url
     return f"https://images-na.ssl-images-amazon.com/images/I/{m.group(1)}._AC_SL1500_.jpg"
+
+
+def product_url(asin):
+    """由 ASIN 派生亚马逊商品详情页链接（competitor-lookup 不返回 url）。"""
+    return f"https://www.amazon.com/dp/{asin}" if asin else None
+
+
+def available_date(available_ms):
+    """上架时间毫秒时间戳 → yyyy-mm-dd（UTC，匹配卖家精灵上架日）。无值返回 None。"""
+    if not available_ms:
+        return None
+    return datetime.datetime.fromtimestamp(available_ms / 1000, tz=datetime.timezone.utc).strftime("%Y-%m-%d")

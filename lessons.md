@@ -67,4 +67,19 @@ quick-view 对无销量数据的 ASIN 返回 `units=-1`（其余字段 None）�
 - `competitor-lookup/US?asins=...`（注意路径无 `/quick-view`）**一个接口返回 57 字段**：亚马逊侧（title/price/rating/reviews/image/url/badges）+ 增强（units/amount/profit/BSR/sellers）+ 独家（`amz_unit_trends` 月销量序列、`seller_dto` 卖家公司全称/地址/国别、`reviews_delta` 评论增长、`questions`）。
 - **关键**：competitor-lookup 的 `price` 是**正确 USD 价**，而亚马逊页面抓取受机房 geo-IP 影响会返回本地货币（HKD 等）。
 - `tk` 签名算法与 quick-view 完全一致（over asins）。
-**规则**：有 ASIN 时优先用 competitor-lookup（全、准、单接口）；关键词模式才需要亚马逊抓取拿 ASIN。两者 CLI 用输入自动路由（纯 ASIN → competitor-lookup，否则 → 关键词）。
+**规则**：有 ASIN 时优先用 competitor-lookup（全、准、单接口）。本项目最终定型为 **ASIN-only**：删掉关键词搜索，只保留 competitor-lookup 全量路径（见 L13/L14 重构）。
+
+## 六、并发与重构（ASIN-only 重构）
+
+### L13. Playwright sync API 在 ThreadPoolExecutor 里并发是可行的——只要每个任务自管生命周期
+并发抓折扣页时，多个线程各自 `sync_playwright()` → launch → close。实测无 greenlet / 线程错误。
+**关键**：每个任务**独立拥有**自己的 Playwright 实例与 browser（不跨线程共享对象）；`sync_playwright()` 的线程绑定约束是"不能跨线程**复用**同一实例"，不是"不能多线程各自**新开**"。因此"每线程一个完整生命周期"的模式安全。
+**规则**：要并发跑 Playwright 抓取，用 ThreadPoolExecutor + 每任务自管 `sync_playwright()` 块即可；别想跨线程共享同一个 browser/page。
+
+### L14. 亚马逊图片 ID 正则要容错特殊字符，且尺寸码分隔符是 `._`
+`large_image_url` 旧正则 `/images/I/([A-Za-z0-9]+)\.` 两处错：①图片 ID 含 `+`（如 `71+oszjnRVL`）→ `[A-Za-z0-9]+` 在 `+` 处截断、`\.` 对不上 → 整条不匹配，高清图没派生成（仍是 200px）；②尺寸码格式是 `{ID}._AC_US200_.jpg`，`.` 后跟的是 `_` 不是大写字母。
+**规则**：用 `/images/I/([^/.]+?)\._` —— ID 允许除 `/`、`.` 外任意字符（含 `+` `%`），到 `._` 这个稳定分隔符停。改完用含 `+` 的真实 ID 补回归测试。
+
+### L15. 并发改造要把"共享可变状态"的锁想清楚，别只盯请求层
+加并发时容易只想着"多线程发请求"，忽略共享状态：①`KeepaTokenManager` 的登录子进程——多线程同时发现 token 过期会各起一个登录进程、竞争写缓存文件；②`invalidate_cache` 的 `unlink` 多线程同时删会抛 FileNotFoundError。
+**规则**：并发改造清单 = 请求并发 + **所有共享可变状态的锁/幂等**。这里给 refresh 加锁 + 双检缓存（拿到锁后复看缓存，已被别的线程刷新就直接复用），`unlink(missing_ok=True)` 容忍并发删除。

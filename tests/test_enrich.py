@@ -151,9 +151,11 @@ def test_business_error_skips_batch_and_continues():
 
 
 def test_delay_key_defaults_when_omitted():
-    """config without delay_seconds_min/max must not KeyError on a multi-batch run."""
+    """顺序路径（workers=1）下，config 缺 delay_seconds_min/max 不能 KeyError；
+    批间默认延时落在 5..8。"""
     cfg = _enrich_config()
     cfg["quick_view"]["batch_size"] = 1  # force >1 batch → delay path
+    cfg["concurrency"] = {"workers": 1}   # 强制顺序路径，批间延时才生效
 
     def fake_request(url, headers, timeout):
         return 200, {"code": "OK", "data": {"items": [{"asin": "X"}]}}
@@ -165,3 +167,24 @@ def test_delay_key_defaults_when_omitted():
     # exactly two between-batch sleeps (3 batches), and within default 5..8 range
     assert len(slept) == 2
     assert all(5 <= t <= 8 for t in slept)
+
+
+def test_lookup_concurrent_merges_all_batches():
+    """workers>1 + 多批：并发跑，所有批次结果合并到 result；并发路径不发批间延时 sleep。"""
+    cfg = _enrich_config()
+    cfg["quick_view"]["batch_size"] = 1   # 每个 ASIN 一批 → 4 批
+    cfg["concurrency"] = {"workers": 3}
+
+    seen_urls = []
+
+    def fake_request(url, headers, timeout):
+        seen_urls.append(url)
+        asin = parse_qs(urlparse(url).query)["asins"][0]
+        return 200, {"code": "OK", "data": {"items": [{"asin": asin, "units": 1}]}}
+
+    slept = []
+    result = lookup_asins(["A1", "A2", "A3", "A4"], cfg, _StubTokenManager(), {},
+                          _sleep=lambda t: slept.append(t), _request=fake_request)
+    assert set(result.keys()) == {"A1", "A2", "A3", "A4"}   # 全部合并
+    assert len(seen_urls) == 4                              # 每批各请求一次
+    assert slept == []                                      # 并发路径不发批间延时

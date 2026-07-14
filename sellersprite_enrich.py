@@ -1,7 +1,8 @@
-"""Leg B：quick-view 批量增强。"""
+"""Leg B：competitor-lookup 批量增强（可并发）。"""
 import json
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 import urllib.error
 from sellersprite_signing import sellersprite_token, extension_version_token
@@ -74,22 +75,37 @@ def _do_request(url: str, headers: dict, timeout: float):
 def lookup_asins(asins: list, config: dict, token_manager, base_headers: dict,
                  _sleep=time.sleep, _request=_do_request) -> dict:
     """competitor-lookup：给定 ASIN，返回 {asin: item}（每条 57 字段，亚马逊+增强全量）。
-    复用 enrich 的重试/鉴权自愈/业务跳过逻辑，仅换 URL 构造。"""
+    按 batch_size 分批，多批通过 ThreadPoolExecutor 并发（worker 数 = concurrency.workers，
+    默认 3）；单批或 workers<=1 时走顺序路径并保留批间延时。复用 enrich 的重试 / 鉴权自愈 /
+    业务跳过逻辑。"""
     qv = config["quick_view"]
     batch = qv.get("batch_size", 20)
-    result = {}
-    for i in range(0, len(asins), batch):
-        chunk = asins[i:i + batch]
+    workers = max(1, int((config.get("concurrency") or {}).get("workers", 3)))
+    chunks = [asins[i:i + batch] for i in range(0, len(asins), batch)]
+
+    def fetch_chunk(chunk):
         url = build_competitor_url(config, chunk)
         try:
             payload = _fetch_with_retry(url, config, token_manager, base_headers, _sleep, _request)
         except BusinessError as e:
-            print(f"⚠️ competitor-lookup 第 {i // batch + 1} 批业务错误，跳过: {e}")
-            continue
-        for item in parse_quickview(payload):
-            result[item.get("asin")] = item
-        if i + batch < len(asins):
-            _sleep(random.uniform(qv.get("delay_seconds_min", 5), qv.get("delay_seconds_max", 8)))
+            print(f"⚠️ competitor-lookup 业务错误，跳过该批: {e}")
+            return []
+        return parse_quickview(payload)
+
+    result = {}
+    if workers == 1 or len(chunks) <= 1:
+        # 顺序路径：保留批间随机延时（礼貌限速）
+        for idx, chunk in enumerate(chunks):
+            for item in fetch_chunk(chunk):
+                result[item.get("asin")] = item
+            if idx < len(chunks) - 1:
+                _sleep(random.uniform(qv.get("delay_seconds_min", 5), qv.get("delay_seconds_max", 8)))
+    else:
+        # 并发路径：worker 数本身即限速，不再加批间延时
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for items in ex.map(fetch_chunk, chunks):
+                for item in items:
+                    result[item.get("asin")] = item
     return result
 
 

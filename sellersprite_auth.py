@@ -1,8 +1,12 @@
 # sellersprite_auth.py
-"""卖家精灵扩展鉴权头管理，复制自 keepa-monitor keepa_auth.py，自包含。"""
+"""卖家精灵扩展鉴权头管理，复制自 keepa-monitor keepa_auth.py，自包含。
+
+并发安全：refresh_from_command 用锁串行化登录子进程（多线程并发跑接口时，
+不会重复登录 / 竞争写缓存）；invalidate_cache 容忍并发删除。"""
 import json
 import os
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -31,6 +35,7 @@ class KeepaTokenManager:
         self.cache_file = cache_file
         self.ttl_seconds = max(60, ttl_seconds)
         self.refresh_margin_seconds = max(10, refresh_margin_seconds)
+        self._refresh_lock = threading.Lock()
 
     def _load_cache(self) -> dict | None:
         if not self.cache_file.exists():
@@ -98,34 +103,40 @@ class KeepaTokenManager:
         command = (os.getenv("KEEPA_TOKEN_REFRESH_COMMAND") or "").strip()
         if not command:
             return None
-        try:
-            result = subprocess.run(
-                command, shell=True, cwd=str(PROJECT_ROOT), capture_output=True,
-                text=True, timeout=float(os.getenv("KEEPA_TOKEN_REFRESH_TIMEOUT_SECONDS", "45")), check=False)
-        except Exception as exc:
-            raise RuntimeError(f"执行 KEEPA_TOKEN_REFRESH_COMMAND 失败: {exc}") from exc
-        if result.returncode != 0:
-            raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 执行失败，exit=" +
-                               f"{result.returncode}, stderr={(result.stderr or '').strip() or '(empty)'}")
-        stdout = (result.stdout or "").strip()
-        if not stdout:
-            raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 未输出 JSON。")
-        try:
-            payload = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 输出不是合法 JSON。") from exc
-        headers = {}
-        for key in (*REQUIRED_HEADERS, *OPTIONAL_HEADERS):
-            value = str(payload.get(key, "")).strip()
-            if value:
-                headers[key] = value
-        if not self._has_required_headers(headers):
-            raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 输出缺少必需字段 "
-                               "(auth-token/auth-fp/random-token)。")
-        ttl_seconds = int(payload.get("ttl_seconds", self.ttl_seconds))
-        self._save_cache(headers, ttl_seconds=ttl_seconds)
-        return headers
+        with self._refresh_lock:
+            # 并发兜底：拿到锁后复看缓存——可能已有别的线程刚刷新好，直接复用，避免重复登录。
+            if not env_bool("KEEPA_TOKEN_REFRESH_EACH_RUN", default=True):
+                cached = self._load_cache()
+                if cached:
+                    return cached
+            try:
+                result = subprocess.run(
+                    command, shell=True, cwd=str(PROJECT_ROOT), capture_output=True,
+                    text=True, timeout=float(os.getenv("KEEPA_TOKEN_REFRESH_TIMEOUT_SECONDS", "45")), check=False)
+            except Exception as exc:
+                raise RuntimeError(f"执行 KEEPA_TOKEN_REFRESH_COMMAND 失败: {exc}") from exc
+            if result.returncode != 0:
+                raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 执行失败，exit=" +
+                                   f"{result.returncode}, stderr={(result.stderr or '').strip() or '(empty)'}")
+            stdout = (result.stdout or "").strip()
+            if not stdout:
+                raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 未输出 JSON。")
+            try:
+                payload = json.loads(stdout)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 输出不是合法 JSON。") from exc
+            headers = {}
+            for key in (*REQUIRED_HEADERS, *OPTIONAL_HEADERS):
+                value = str(payload.get(key, "")).strip()
+                if value:
+                    headers[key] = value
+            if not self._has_required_headers(headers):
+                raise RuntimeError("KEEPA_TOKEN_REFRESH_COMMAND 输出缺少必需字段 "
+                                   "(auth-token/auth-fp/random-token)。")
+            ttl_seconds = int(payload.get("ttl_seconds", self.ttl_seconds))
+            self._save_cache(headers, ttl_seconds=ttl_seconds)
+            return headers
 
     def invalidate_cache(self) -> None:
-        if self.cache_file.exists():
-            self.cache_file.unlink()
+        # missing_ok：并发鉴权自愈时多个线程可能同时删缓存，忽略已删除。
+        self.cache_file.unlink(missing_ok=True)

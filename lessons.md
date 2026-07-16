@@ -83,3 +83,18 @@ quick-view 对无销量数据的 ASIN 返回 `units=-1`（其余字段 None）�
 ### L15. 并发改造要把"共享可变状态"的锁想清楚，别只盯请求层
 加并发时容易只想着"多线程发请求"，忽略共享状态：①`KeepaTokenManager` 的登录子进程——多线程同时发现 token 过期会各起一个登录进程、竞争写缓存文件；②`invalidate_cache` 的 `unlink` 多线程同时删会抛 FileNotFoundError。
 **规则**：并发改造清单 = 请求并发 + **所有共享可变状态的锁/幂等**。这里给 refresh 加锁 + 双检缓存（拿到锁后复看缓存，已被别的线程刷新就直接复用），`unlink(missing_ok=True)` 容忍并发删除。
+
+### L16. 本地 HTML 报表要"内联注入"，别用 fetch——`file://` 下 fetch 被 CORS 拦
+旧的 products.html 用 `fetch('products.csv')` 取数据，但流水线已改成只产 JSON，且**双击 `file://` 打开时浏览器 CORS 直接拦掉 fetch**——结果打开是空表。改造为：Python 把 `{products, overview}` 的 JSON **内联**到模板的 `/*__DATA__*/…/*__END__*/` 占位之间，生成自包含 HTML，双击即看、无需服务器。
+**规则**：①面向"双击查看"的本地 HTML，数据要内联，不能依赖 fetch/XHR（file:// 下被拦）。②把 JSON 塞进 `<script>` 时，必须把 `</` 转义成 `<\/`，否则商品标题里出现 `</script>` 会截断脚本块。③渲染器要跟数据形状对齐：本项目 `clean_row` 丢掉了 `bsr_list`/`trends` 原始 JSON（只留扁平键 + `amz_unit_trend` 的 `{YYYYMM:count}` 映射），渲染函数必须改用这些键，不能沿用旧的数组形状。
+
+### L17. competitor-lookup 销量字段分父体/子体：units/amount 是父体聚合，month_units/sub_total_amount/amz_unit_trend 是查询的本子体
+查的都是子 ASIN（每条 `parent` 指向父 ASIN），但接口把**父体（变体家族）聚合**当 headline：`units`×`price` 恒等于 `amount`（父体销量/销售额），`month_units`×`price`≈`sub_total_amount`（本子体）。`amz_unit_trend`（月销序列）量级贴近 `month_units`（子体），而非父体的 `units`。products.html 销量块曾把 `month_units` 标成「父体」、`units` 标成「子体」→ 反了。
+**规则**：渲染销量 父体=`units`、子体=`month_units`（金额同理 父体=`amount`、子体=`sub_total_amount`）；趋势 `amz_unit_trend` 是查询的本子体月销序列。判据：`sub_total_amount`（"sub"=子体）恒小于 `amount` 且与 `month_units` 配对，`units` 恒大于 `month_units`（父体聚合 > 单子体）。
+
+**补充（实测坐实）**：competitor-lookup 返回**两条**月销序列——`amzUnitTrends`（页面渲染用的 `amz_unit_trend`）量级贴合 `month_units`，是**子体**；另一条 `trends` 量级贴合 `units`，是**父体**月销。父 ASIN 本身在接口里"无数据"（变体父体非独立在售 listing），无法直接查父体核对，靠两条序列分别对标 `units`/`month_units` 判定。`clean_row` 目前把 `trends`（父体）和 `amz_unit_trends`（原始 list）当冗余 JSON 丢弃，所以页面只显示子体趋势；若要显示父体趋势需保留/派生 `trends`。
+
+### L18. "ltd/限时折扣"不在卖家精灵 badges，在亚马逊页 dealBadge；折扣价抓取要 deal 门控 + 伪折扣守卫
+competitor-lookup **不含任何折扣/deal/listPrice 字段**（折扣只能抓亚马逊页），`badges` 也只有 AC/BS/NR/EBC/V 这类，**没有 ltd**。所谓 ltd 是亚马逊详情页的 `class="dealBadge"`（DealsX）+ 倒计时（`dealsCountdownTimer`/`deal_expiry_timer`）。曾误把示例产品公司名里的 "Ltd" 当成 deal 标记——别犯。
+**规则**：①判 deal 用 `_has_deal(html)`（dealBadge 或倒计时），**无 deal 不取折扣**（普通 MSRP 划线价不当折扣）。②亚马逊页第一处 `a-offscreen` 不一定是主价（可能取到变体/样品价 HKD1.72 → 99% 伪折扣），且很多 deal 页无 `#corePrice_feature_div` 等标准块、选择器救不了；故对折扣% 设上限 90%，超阈判抓错、丢弃（显示无折扣 > 伪 99%）。
+

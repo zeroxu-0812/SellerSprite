@@ -3,15 +3,18 @@
 import json
 import os
 import re
+import select
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from sellersprite_auth import KeepaTokenManager
-from amazon_search import fetch_product_discount
+from amazon_search import fetch_product_detail
 from sellersprite_enrich import lookup_asins, AuthExpiredError
-from field_merge import flatten_record, large_image_url, product_url, available_date
+from field_merge import flatten_record, large_image_url, product_url, available_date, trend_pairs_to_map
+from html_render import render_html
 from market_overview import derive_market_overview
-from output_writer import output_dir_for, write_products, write_market_overview
+from output_writer import prepare_output_dir, write_products, write_market_overview
 
 ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = ROOT / "config.json"
@@ -61,39 +64,43 @@ def _print_summary(rows: list) -> None:
         print(fmt(row))
 
 
-def _emit_rows(rows: list, label: str) -> dict:
-    """统一收尾：派生市场总览 + 落地 JSON + 打印摘要。rows 为扁平后的单源商品行。"""
+def _emit_rows(rows: list) -> dict:
+    """统一收尾：派生市场总览 + 清空旧输出 + 落地 JSON + 渲染 HTML + 打印摘要。
+    rows 为扁平后的单源商品行。每次只保留最新一次输出（扁平单份）。"""
     for r in rows:
         r["image_large"] = large_image_url(r.get("image"))        # 派生 1500px 高清封面链接
         r["url"] = product_url(r.get("asin"))                     # 派生商品详情页跳转链接
         r["available_date"] = available_date(r.get("available"))  # 上架时间戳 → yyyy-mm-dd
+        r["parent_unit_trend"] = trend_pairs_to_map(r.get("trends"))  # 派生父体月销趋势（trends → {YYYYMM:n}）
     overview = derive_market_overview(rows)
-    out_dir = output_dir_for(label, base=str(ROOT / "output"))
-    write_products(rows, out_dir, label)
-    write_market_overview(overview, out_dir, label)
+    out_dir = prepare_output_dir(base=str(ROOT / "output"))   # 清空上一次输出
+    write_products(rows, out_dir)
+    write_market_overview(overview, out_dir)
+    render_html(rows, overview, ROOT / "products.html", out_dir / "products.html")
     _print_summary(rows)
     print(f"\n📊 市场总览（样本 {overview['sample_size']}）:")
     print(f"   均价 {overview['avg_price']} | 均评分 {overview['avg_rating']} | 均评论 {overview['avg_reviews']}")
     print(f"   样本总销量 {overview['total_units']} | 总销售额 {overview['total_amount']}")
     print(f"   Top10 集中度 {overview['top10_units_share']}")
-    print(f"💾 已保存到 {out_dir}")
+    print(f"💾 已保存到 {out_dir}（products.json + market_overview.json + products.html，已清空上次输出）")
+    print(f"🌐 双击查看: {out_dir / 'products.html'}")
     return {"products": len(rows), "out_dir": str(out_dir)}
 
 
-def _enrich_discount(items: dict, config: dict) -> None:
-    """并发抓亚马逊详情页拿【页面显示的折扣%】（币种无关），再用 competitor 的准确 USD 现价
-    反推出 USD 的折扣前价。best-effort，单个失败不影响整体。"""
+def _enrich_detail(items: dict, config: dict) -> None:
+    """并发抓亚马逊详情页拿【折扣% + About this item】。折扣% 用 competitor 准确 USD 现价
+    反推折扣前价；about 取 feature-bullets 要点。best-effort，单个失败不影响整体。"""
     workers = max(1, int((config.get("concurrency") or {}).get("workers", 3)))
     asins = [a for a in items if a]
     if not asins:
         return
-    print(f"   亚马逊详情页折扣: {len(asins)} 个 ASIN（并发 {workers}）...")
+    print(f"   亚马逊详情页(折扣+About): {len(asins)} 个 ASIN（并发 {workers}）...")
 
     def fetch_one(asin):
         try:
-            return asin, fetch_product_discount(asin, config)
+            return asin, fetch_product_detail(asin, config)
         except Exception as e:  # noqa: BLE001
-            print(f"   ⚠️ {asin} 折扣抓取失败，跳过: {e}")
+            print(f"   ⚠️ {asin} 详情抓取失败，跳过: {e}")
             return asin, {}
 
     results = {}
@@ -113,6 +120,7 @@ def _enrich_discount(items: dict, config: dict) -> None:
         if disc and isinstance(price, (int, float)) and price > 0:
             # USD 折扣前价 = 现价 / (1 - 折扣%)
             items[asin]["list_price"] = round(price / (1 - disc / 100), 2)
+        items[asin]["about"] = detail.get("about") or []
 
 
 def process_asins(asins: list, config: dict, token_manager) -> dict:
@@ -120,12 +128,12 @@ def process_asins(asins: list, config: dict, token_manager) -> dict:
     print(f"\n🔎 competitor-lookup: {len(asins)} 个 ASIN")
     items = lookup_asins(asins, config, token_manager, {"accept": "application/json"})
     print(f"   卖家精灵返回 {len(items)} 条（每条 57 字段）")
-    _enrich_discount(items, config)   # 亚马逊详情页折扣信息
+    _enrich_detail(items, config)   # 亚马逊详情页：折扣 + About this item
     rows = [flatten_record(it) for it in items.values()]
     if not rows:
         print("   ⚠️ 无数据")
         return {}
-    return _emit_rows(rows, f"asins_{len(rows)}")
+    return _emit_rows(rows)
 
 
 _ASIN_RE = re.compile(r"[A-Z0-9]{10}")
@@ -152,15 +160,31 @@ def read_asins_input(raw: str) -> list:
     return parse_asins(text)
 
 
+def _read_input(prompt: str) -> str:
+    """读一行输入；若为多行粘贴（stdin 缓冲区还有待读行）则自动合并全部行。
+    单行手动输入时缓冲区为空，行为等同 input()——多行粘贴不再被截断到首行。"""
+    chunks = [input(prompt)]
+    try:
+        while select.select([sys.stdin], [], [], 0.1)[0]:
+            nxt = sys.stdin.readline()
+            if not nxt:  # EOF
+                break
+            chunks.append(nxt)
+    except (OSError, ValueError):
+        # select 不可用（Windows 对文件描述符 / 某些重定向场景）：退化为单行
+        pass
+    return "".join(chunks)
+
+
 def main():
     load_env()
     config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     token_manager = KeepaTokenManager(ROOT / ".token_cache.json")
     print("=== 卖家精灵 ASIN 爬虫 ===（输入 q 退出）")
-    print("提示：粘贴 ASIN（逗号/空格/换行分隔多个），或输入含 ASIN 的文件路径")
+    print("提示：粘贴 ASIN（逗号/空格/换行分隔，多行粘贴自动合并），或输入含 ASIN 的文件路径")
     while True:
         try:
-            raw = input("\n输入 ASIN 或文件路径: ").strip()
+            raw = _read_input("\n输入 ASIN 或文件路径: ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n再见"); break
         if not raw:

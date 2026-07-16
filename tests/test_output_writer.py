@@ -1,18 +1,27 @@
 # tests/test_output_writer.py
 import json
-from output_writer import write_products, write_market_overview, output_dir_for, clean_row
+from output_writer import write_products, write_market_overview, prepare_output_dir, clean_row
 
 
-def test_output_dir_uses_date_prefix(tmp_path):
-    d = output_dir_for("asins_2", base=str(tmp_path))
-    assert "asins_2" in d.name
-    assert "keyword_" not in d.name     # 不再带 keyword_ 前缀
+def test_prepare_output_dir_wipes_previous(tmp_path):
+    """扁平单份：每次 prepare 都清空目录内旧文件与子目录，只留最新一次。"""
+    base = tmp_path / "out"
+    d = prepare_output_dir(base=str(base))
+    assert d == base
+    (d / "stale.json").write_text("x", encoding="utf-8")          # 上次的旧文件
+    sub = d / "old_run"; sub.mkdir(); (sub / "a.json").write_text("y", encoding="utf-8")  # 上次的旧子目录
+
+    d2 = prepare_output_dir(base=str(base))                       # 再次准备 → 清空
+    assert d2 == base
+    assert not (d2 / "stale.json").exists()
+    assert not (d2 / "old_run").exists()
+    assert d2.is_dir()                                            # 目录本身保留
 
 
 def test_write_products_json(tmp_path):
     rows = [{"asin": "A", "price": 9.99, "units": 100}, {"asin": "B", "price": 19.99}]
     d = tmp_path / "out"; d.mkdir()
-    write_products(rows, d, "asins_2")
+    write_products(rows, d)
     json_path = d / "products.json"
     assert json_path.exists()
     assert not (d / "products.csv").exists()     # 不再产出 CSV
@@ -31,7 +40,7 @@ def test_products_json_cleaned_dedup_maximal(tmp_path):
         "bsr_list__main_rank": 5, "image_large": "https://x",  # 保留
     }]
     d = tmp_path / "out"; d.mkdir()
-    write_products(rows, d, "asins_1")
+    write_products(rows, d)
     item = json.loads((d / "products.json").read_text(encoding="utf-8"))[0]
     assert "questions" not in item and "url" not in item
     assert "bsr_list" not in item
@@ -43,6 +52,6 @@ def test_products_json_cleaned_dedup_maximal(tmp_path):
 
 def test_write_market_overview(tmp_path):
     d = tmp_path / "out"; d.mkdir()
-    write_market_overview({"avg_price": 20.0, "sample_size": 3}, d, "asins_3")
+    write_market_overview({"avg_price": 20.0, "sample_size": 3}, d)
     assert (d / "market_overview.json").exists()
     assert not (d / "market_overview.csv").exists()    # 不再产出 CSV

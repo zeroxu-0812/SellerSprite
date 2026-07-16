@@ -1,4 +1,4 @@
-from field_merge import available_date, camel_to_snake, flatten_record, large_image_url, product_url, to_number
+from field_merge import available_date, camel_to_snake, flatten_record, large_image_url, product_url, to_number, trend_pairs_to_map
 
 
 def test_camel_to_snake():
@@ -53,3 +53,20 @@ def test_product_url():
 def test_available_date():
     assert available_date(1744945920000) == "2025-04-18"   # B0F1QHNFJP 真实上架日
     assert available_date(None) is None
+
+
+def test_trend_pairs_to_map_from_json_string():
+    raw = '[{"dk":"202605","sales":1000},{"dk":"202606","sales":50}]'
+    assert trend_pairs_to_map(raw) == '{"202605":1000,"202606":50}'
+
+
+def test_trend_pairs_to_map_from_list():
+    raw = [{"dk": "202601", "sales": 300}, {"dk": "202602", "sales": 200}]
+    assert trend_pairs_to_map(raw) == '{"202601":300,"202602":200}'
+
+
+def test_trend_pairs_to_map_empty_and_garbage():
+    assert trend_pairs_to_map(None) is None
+    assert trend_pairs_to_map("") is None
+    assert trend_pairs_to_map("not json") is None
+    assert trend_pairs_to_map("[]") is None

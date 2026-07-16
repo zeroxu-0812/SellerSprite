@@ -87,3 +87,20 @@ def available_date(available_ms):
     if not available_ms:
         return None
     return datetime.datetime.fromtimestamp(available_ms / 1000, tz=datetime.timezone.utc).strftime("%Y-%m-%d")
+
+
+def trend_pairs_to_map(trend_json):
+    """把 sellersprite 的 trends [{dk:'YYYYMM', sales:n}, ...]（JSON 串或 list）转成
+    {'YYYYMM': n} 映射 JSON 串，与 amz_unit_trend 同形，用于派生【父体】月销趋势。
+    无值 / 解析失败返回 None。"""
+    if not trend_json:
+        return None
+    try:
+        arr = json.loads(trend_json) if isinstance(trend_json, str) else trend_json
+    except (ValueError, TypeError):
+        return None
+    m = {}
+    for it in arr or []:
+        if isinstance(it, dict) and it.get("dk") and it.get("sales") is not None:
+            m[str(it["dk"])] = it["sales"]
+    return json.dumps(m, ensure_ascii=False, separators=(",", ":")) if m else None

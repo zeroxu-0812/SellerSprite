@@ -1,19 +1,21 @@
 # output_writer.py
-"""JSON 落地：products.json（每商品一行，去重 + 最大保留）+ market_overview.json。"""
-import datetime
+"""扁平单份 JSON 落地：每次运行前清空 output，只保留最新一次的
+products.json + market_overview.json（products.html 由 html_render 另写）。"""
 import json
-import re
+import shutil
 from pathlib import Path
 
 
-def _safe_name(label: str) -> str:
-    return re.sub(r"[^\w一-龥]+", "_", label).strip("_") or "asins"
-
-
-def output_dir_for(label: str, base: str = "output") -> Path:
-    today = datetime.date.today().isoformat()
-    d = Path(base) / f"{_safe_name(label)}_{today}"
+def prepare_output_dir(base: str = "output") -> Path:
+    """扁平单份输出目录：清空 base 内所有旧文件 / 子目录后返回 base。
+    保证 output 永远只含最新一次结果，代码库干净。"""
+    d = Path(base)
     d.mkdir(parents=True, exist_ok=True)
+    for child in d.iterdir():
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
     return d
 
 
@@ -37,13 +39,13 @@ def clean_row(row: dict) -> dict:
             if k not in _REDUNDANT_RAW and not _is_empty(v)}
 
 
-def write_products(rows: list, out_dir: Path, label: str) -> None:
+def write_products(rows: list, out_dir: Path) -> None:
     """products.json：去重 + 最大保留的清洗版（丢空值与冗余原始 JSON）。"""
     cleaned = [clean_row(r) for r in rows]
     (out_dir / "products.json").write_text(
         json.dumps(cleaned, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_market_overview(overview: dict, out_dir: Path, label: str) -> None:
+def write_market_overview(overview: dict, out_dir: Path) -> None:
     (out_dir / "market_overview.json").write_text(
         json.dumps(overview, ensure_ascii=False, indent=2), encoding="utf-8")

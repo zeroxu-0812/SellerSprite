@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>商品分析表 - products.json</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; background:#f5f7fa; color:#23272e; font-size:14px; line-height:1.6; }
+  header { background:#232f3e; color:#fff; padding:14px 22px; display:flex; align-items:center; gap:14px; box-shadow:0 2px 10px rgba(0,0,0,.12); position:relative; z-index:5; }
+  header h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:.5px; }
+  header .meta { font-size:12px; opacity:.75; }
+  .dropzone { margin:18px 22px; padding:26px; border:2px dashed #c7d0d8; border-radius:12px; background:#fff; text-align:center; color:#6b7480; cursor:pointer; }
+  .dropzone.dragover { border-color:#ff9900; background:#fff7e6; }
+  #fileInput { display:none; }
+  .overview { margin:0 22px 12px; padding:12px 16px; background:#fef9f0; border:1px solid #f5e6c8; border-radius:10px; font-size:13px; color:#8a6d3b; line-height:1.9; }
+  .overview b { color:#b15a00; }
+  .toolbar { margin:0 22px 12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; position:relative; }
+  .toolbar .count { color:#6b7480; font-size:13px; }
+  .toggle { color:#007185; cursor:pointer; font-size:13px; }
+
+  .table-wrap { margin:0 22px 44px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+  .scroll { overflow:auto; max-height:none; }
+  table.products { width:100%; border-collapse:separate; border-spacing:0; font-size:14px; min-width:1700px; }
+  table.products th, table.products td { padding:12px 14px; border-bottom:1px solid #f0f1f3; vertical-align:top; text-align:left; }
+  table.products thead th { position:sticky; top:0; background:#232f3e; color:#fff; font-weight:500; font-size:13px; z-index:2; box-shadow:0 1px 0 rgba(0,0,0,.15); white-space:nowrap; }
+  table.products thead th:first-child { position:sticky; left:0; z-index:4; }
+  table.products tbody tr:hover td { background:#f0f7ff; }
+  /* 固定首列：主图横向滚动时不消失；hover 同步高亮 */
+  table.products tbody td:first-child { position:sticky; left:0; background:#fff; z-index:1; box-shadow:4px 0 6px -4px rgba(0,0,0,.18); }
+  table.products tbody tr:hover td:first-child { background:#f0f7ff; }
+
+  .img-cell img { width:92px; height:92px; object-fit:contain; background:#fafafa; border:1px solid #eceef1; border-radius:8px; display:block; }
+  .title-cell { max-width:260px; min-width:200px; }
+  .title-cell a { color:#0a7ea4; text-decoration:none; font-weight:500; line-height:1.45; display:block; }
+  .title-cell a:hover { color:#c45500; text-decoration:underline; }
+  .asin-line { color:#5b6470; font-size:13px; margin-top:4px; }
+  .asin-line b { color:#1c2230; }
+  .parent-line { color:#9aa3ad; font-size:12px; margin-top:2px; }
+
+  .brand-link { color:#0a7ea4; text-decoration:none; }
+  .brand-link:hover { text-decoration:underline; color:#c45500; }
+
+  .stars { color:#ffa41c; font-size:15px; letter-spacing:-1px; }
+  .rating-meta { color:#6b7480; font-size:13px; margin-top:2px; }
+
+  .date-line { color:#1c2230; }
+  .days-line { color:#9aa3ad; font-size:12px; margin-top:2px; }
+
+  .dim-block { font-size:13px; line-height:1.75; color:#4a5260; }
+  .dim-block .lbl { color:#9aa3ad; }
+
+  .cat-path { font-size:13px; color:#5b6470; line-height:1.55; max-width:220px; word-break:break-word; }
+
+  .bsr-block { font-size:13px; line-height:1.8; }
+  .bsr-row { display:flex; justify-content:space-between; gap:8px; }
+  .bsr-row .lbl { color:#5b6470; }
+  .bsr-row .rk { color:#c0392b; font-weight:600; white-space:nowrap; }
+  .bsr-row.main { font-weight:600; }
+  .bsr-row.sub { color:#4a5260; padding-left:8px; }
+
+  .seller-block { font-size:13px; line-height:1.7; }
+  .seller-block .name { color:#1c2230; font-weight:500; }
+  .seller-block .nat { color:#9aa3ad; }
+
+  .sales-cell { font-size:13px; line-height:1.7; }
+  .sales-cell .parent-u { color:#0a7ea4; font-weight:600; }
+  .sales-cell .child-u { color:#4a5260; }
+  .sales-cell .lbl { color:#9aa3ad; }
+  .sales-cell .sub { color:#1a8a3c; font-size:12px; margin-top:1px; }
+  .sales-cell .sub.neg { color:#c0392b; }
+
+  .trend-cell { min-width:220px; }
+  .spark { display:flex; gap:5px; align-items:flex-end; height:90px; padding-top:18px; border-bottom:1px solid #e5e7ea; position:relative; }
+  .spark .bar { flex:1; min-width:14px; background:linear-gradient(180deg,#ff9900 0%,#ffb84d 100%); border-radius:3px 3px 0 0; position:relative; cursor:pointer; transition:filter .15s; }
+  .spark .bar.zero { background:#e8eaed; }
+  .spark .bar:hover { filter:brightness(1.12); box-shadow:0 0 0 2px #c45500 inset; }
+  .spark .bar .val { position:absolute; top:-15px; left:50%; transform:translateX(-50%); font-size:10px; color:#4a5260; white-space:nowrap; font-weight:500; }
+  .spark .bar .tip { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:#232f3e; color:#fff; padding:4px 8px; border-radius:4px; font-size:11px; white-space:nowrap; opacity:0; pointer-events:none; margin-bottom:6px; z-index:5; }
+  .spark .bar:hover .tip { opacity:1; }
+  .spark .axis { display:flex; gap:5px; margin-top:4px; }
+  .spark .axis span { flex:1; text-align:center; font-size:10px; color:#9aa3ad; }
+  .spark-summary { font-size:12px; color:#6b7480; margin-top:6px; line-height:1.4; }
+  .spark-summary b { color:#1a8a3c; }
+
+  /* 趋势列：子体(橙) + 父体(海军蓝) 双行柱图 */
+  .trend-cell .spark-row { margin-bottom:8px; }
+  .trend-cell .spark-row:last-child { margin-bottom:0; }
+  .trend-cell .spark-label { font-size:11px; color:#6b7480; margin-bottom:2px; font-weight:600; }
+  .trend-cell .spark-sum { color:#9aa3ad; font-weight:400; margin-left:4px; }
+  .trend-cell .spark { height:48px; padding-top:14px; }
+  .trend-cell .spark .bar.parent { background:linear-gradient(180deg,#37475a 0%,#5a7088 100%); }
+  .trend-cell .spark .bar.parent:hover { box-shadow:0 0 0 2px #232f3e inset; }
+
+  .empty { color:#c8ccd2; }
+
+  /* 排序指示符（Task 2 用） */
+  table.products thead th[data-sort] { cursor:pointer; user-select:none; }
+  table.products thead th[data-sort]:hover { background:#2a3a52; }
+  table.products thead th.sort-asc::after { content:" ▲"; font-size:10px; color:#ff9900; }
+  table.products thead th.sort-desc::after { content:" ▼"; font-size:10px; color:#ff9900; }
+
+  /* 搜索框（Task 3 用） */
+  .search-box { flex:0 1 280px; padding:7px 12px; border:1px solid #d3d9df; border-radius:8px; font-size:13px; outline:none; transition:border-color .15s, box-shadow .15s; }
+  .search-box:focus { border-color:#ff9900; box-shadow:0 0 0 3px rgba(255,153,0,.15); }
+
+  /* 关于商品列 */
+  .about-cell { max-width:230px; min-width:160px; position:relative; }
+  .about-cell .about-summary { margin:0; padding-left:16px; color:#4a5260; font-size:13px; line-height:1.65; }
+  .about-cell .about-summary li.more { list-style:none; margin-left:-16px; color:#9aa3ad; }
+  .about-cell .about-full { display:none; position:absolute; top:0; left:100%; margin-left:8px; background:#232f3e; color:#fff; padding:10px 12px; border-radius:6px; font-size:12px; line-height:1.6; width:300px; z-index:6; box-shadow:0 4px 14px rgba(0,0,0,.22); }
+  .about-cell .about-full ul { margin:0; padding-left:16px; }
+  .about-cell:hover .about-full { display:block; }
+
+  /* 可拖拽列宽手柄（表头右边缘）*/
+  .col-resizer { position:absolute; top:0; right:0; width:7px; margin-right:-1px; height:100%; cursor:col-resize; user-select:none; z-index:3; }
+  .col-resizer:hover, .col-resizer.active { background:rgba(255,153,0,.55); }
+
+  /* 隐藏列浮层 */
+  .col-picker { display:none; position:absolute; right:0; top:100%; margin-top:6px; background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; box-shadow:0 6px 20px rgba(0,0,0,.15); z-index:20; columns:2; column-gap:18px; max-width:340px; }
+  .col-picker label { display:block; padding:3px 0; font-size:13px; color:#4a5260; cursor:pointer; break-inside:avoid; }
+  .col-picker input { margin-right:5px; }
+
+  /* 转置视图：字段为行、商品为列 */
+  table.products.transposed { min-width:auto; }
+  table.products.transposed th, table.products.transposed td { padding:10px 12px; border-bottom:1px solid #f0f1f3; vertical-align:top; text-align:left; }
+  table.products.transposed thead th { position:sticky; top:0; background:#fff; color:#4a5260; font-weight:500; box-shadow:0 1px 0 #e5e7eb; z-index:2; }
+  table.products.transposed th.field-name { position:sticky; left:0; background:#232f3e; color:#fff; font-weight:500; z-index:3; min-width:96px; max-width:130px; }
+  table.products.transposed thead th.field-name { z-index:4; }
+  table.products.transposed th.prod-head { width:180px; min-width:160px; }
+  table.products.transposed th.prod-head img,
+  table.products.transposed td img { width:44px; height:44px; object-fit:contain; display:block; margin:0 auto 4px; background:#fafafa; border-radius:6px; }
+  table.products.transposed th.prod-head span { font-size:11px; color:#0a7ea4; display:block; line-height:1.3; }
+  table.products.transposed td { width:180px; min-width:160px; }
+  .toggle.active { color:#c45500; font-weight:600; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>商品分析表</h1>
+  <span class="meta">products.json · 每个商品一个对象</span>
+</header>
+
+<div class="dropzone" id="dropzone">
+  <p style="margin:0 0 6px;">点击选择 <code>products.json</code>，或将文件拖拽到这里</p>
+  <p style="margin:0;font-size:12px;color:#999;">无内联数据时才显示：手动加载 products.json（或 products.csv）查看</p>
+  <input type="file" id="fileInput" accept=".json,.csv">
+</div>
+
+<div id="overview" class="overview" style="display:none"></div>
+
+<div class="toolbar" id="toolbar" style="display:none">
+  <span class="count" id="countText"></span>
+  <input class="search-box" id="searchBox" type="search" placeholder="搜索 标题 / ASIN / 品牌 / 卖家" autocomplete="off">
+  <span class="toggle" id="colToggle">列 &#9881;</span>
+  <span class="toggle" id="transposeToggle">转置</span>
+  <span class="toggle" onclick="resetLoader()">重新加载</span>
+  <div class="col-picker" id="colPicker"></div>
+</div>
+
+<div id="container"></div>
+
+<script>
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const container = document.getElementById('container');
+const toolbar = document.getElementById('toolbar');
+const countText = document.getElementById('countText');
+const overviewEl = document.getElementById('overview');
+
+dropzone.addEventListener('click', ()=>fileInput.click());
+['dragover','dragenter'].forEach(e=>dropzone.addEventListener(e,ev=>{ev.preventDefault();dropzone.classList.add('dragover');}));
+['dragleave','drop'].forEach(e=>dropzone.addEventListener(e,ev=>{ev.preventDefault();dropzone.classList.remove('dragover');}));
+dropzone.addEventListener('drop', ev=>{ if(ev.dataTransfer.files[0]) handleFile(ev.dataTransfer.files[0]); });
+fileInput.addEventListener('change', ev=>{ if(ev.target.files[0]) handleFile(ev.target.files[0]); });
+
+function handleFile(file){
+  const name = file.name.toLowerCase();
+  if(name.endsWith('.json')){
+    file.text().then(t=>{ try{ show(JSON.parse(t)); }catch(e){ alert('JSON 解析失败：'+e.message); } });
+  }else{
+    Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>show(res.data)});
+  }
+}
+function resetLoader(){ container.innerHTML=''; toolbar.style.display='none'; overviewEl.style.display='none'; dropzone.style.display='block'; fileInput.value=''; }
+
+function safe(v){ if(v===undefined||v===null) return ''; return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmt(v){ if(v===undefined||v===null||v==='') return '<span class="empty">—</span>'; return safe(v); }
+
+// 星级
+function stars(r){
+  r=+r||0;
+  if(!r) return '<span class="empty">—</span>';
+  const n=Math.round(r);
+  return `<span class="stars">${'★'.repeat(n)}${'☆'.repeat(5-n)}</span>`;
+}
+
+// BSR 排名：大类(main) + 小类(sub)，直接用扁平化键
+function renderBsr(p){
+  const mRank=p.bsr_list__main_rank, mLabel=p.bsr_list__main_label;
+  const sRank=p.bsr_list__sub_rank, sLabel=p.bsr_list__sub_label;
+  const hasM = mRank!==undefined && mRank!==null && mRank!=='';
+  const hasS = sRank!==undefined && sRank!==null && sRank!=='';
+  if(!hasM && !hasS) return '<span class="empty">—</span>';
+  let html = hasM ? `<div class="bsr-row main"><span class="lbl">${safe(mLabel)}</span><span class="rk">#${safe(mRank)}</span></div>` : '';
+  if(hasS) html += `<div class="bsr-row sub"><span class="lbl">└ ${safe(sLabel)}</span><span class="rk">#${safe(sRank)}</span></div>`;
+  return `<div class="bsr-block">${html}</div>`;
+}
+
+// 类目路径
+function renderCatPath(p){
+  // 优先 node_label_path (英文)，否则 node_label_paths_locale
+  let path = p.node_label_path || '';
+  if(!path){ try{ path = (typeof p.node_label_paths_locale==='string'?p.node_label_paths_locale:'')||''; }catch(e){} }
+  return `<div class="cat-path">${path?safe(path):'<span class="empty">—</span>'}</div>`;
+}
+
+// 尺寸块
+function renderDim(p){
+  return `<div class="dim-block">
+    <div><span class="lbl">尺寸类型:</span> ${fmt(p.pkg_dimension_type_cn_label)}</div>
+    <div><span class="lbl">包装:</span> ${fmt(p.pkg_dimensions)}</div>
+    <div><span class="lbl">商品尺寸:</span> ${fmt(p.dimension)}</div>
+    <div><span class="lbl">重量:</span> ${fmt(p.weight)}</div>
+  </div>`;
+}
+
+// 销售额块
+function renderAmount(p){
+  const g = +p.amount_growth;
+  const hasGrowth = p.amount_growth!==undefined && p.amount_growth!=='' && p.amount_growth!==null && !isNaN(+p.amount_growth);
+  const gtxt = hasGrowth ? `<span class="sub ${g<0?'neg':''}">${g>0?'+':''}${g}%</span>` : '';
+  const sub = (p.sub_total_amount==null || p.sub_total_amount===-1 || p.sub_total_amount==='') ? null : p.sub_total_amount;
+  return `<div class="sales-cell">
+    <div><span class="lbl">父体:</span> <b style="color:#080">${safe(p.currency)}${fmt(p.amount)}</b> ${gtxt}</div>
+    <div><span class="lbl">子体:</span> <span class="child-u">${safe(p.currency)}${fmt(sub)}</span></div>
+  </div>`;
+}
+
+// 徽章
+function renderBadges(b){
+  if(!b) return '<span class="empty">—</span>';
+  let arr=[];
+  try{ arr = typeof b==='string'?JSON.parse(b):b; }catch(e){ arr=String(b).split(','); }
+  if(!Array.isArray(arr)) arr=[String(arr)];
+  arr = arr.filter(x=>x && x!=='[]');
+  if(!arr.length) return '<span class="empty">—</span>';
+  return `<div style="display:flex;gap:4px;flex-wrap:wrap;max-width:140px">${arr.map(x=>`<span style="background:#007185;color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;white-space:nowrap">${safe(x)}</span>`).join('')}</div>`;
+}
+
+// 卖家块
+function renderSeller(p){
+  return `<div class="seller-block">
+    <div class="name">${fmt(p.seller_name)}</div>
+    <div class="nat">国家: ${fmt(p.seller_dto__nation_name)}</div>
+  </div>`;
+}
+
+// 销量块
+function renderSales(p){
+  return `<div class="sales-cell">
+    <div><span class="lbl">父体销量:</span> <span class="parent-u">${fmt(p.units)}</span></div>
+    <div><span class="lbl">子体月销:</span> <span class="child-u">${fmt(p.month_units)}</span></div>
+  </div>`;
+}
+
+// 销量趋势：子体 amz_unit_trend（橙）+ 父体 parent_unit_trend（海军蓝），各一条柱状小图
+function _parseTrend(raw){
+  let map={};
+  try{ map = typeof raw==='string'?JSON.parse(raw):(raw||{}); }catch(e){ map={}; }
+  const keys = Object.keys(map).filter(k=>/^\d{6}$/.test(k)).sort();
+  const vals = keys.map(k=>({dk:k, sales:+map[k]||0}));
+  const max = Math.max(...vals.map(x=>x.sales),1);
+  const total = vals.reduce((a,b)=>a+b.sales,0);
+  return {vals, max, total};
+}
+function _sparkBars(t, cls){
+  let bars='';
+  t.vals.forEach(it=>{
+    const v=it.sales, h=Math.max(v>0?6:2,(v/t.max)*100);
+    const monthLabel=`${it.dk.slice(0,4)}-${it.dk.slice(4,6)}`;
+    bars += `<div class="bar ${cls} ${v===0?'zero':''}" style="height:${h}%">
+      ${v>0?`<div class="val">${v}</div>`:''}
+      <div class="tip">${monthLabel}：${v} 件</div>
+    </div>`;
+  });
+  return bars;
+}
+function _sparkRow(label, t, cls){
+  return `<div class="spark-row">
+    <div class="spark-label">${label} <span class="spark-sum">合计 ${t.total} · 峰值 ${t.max} · ${t.vals.length}月</span></div>
+    <div class="spark">${_sparkBars(t, cls)}</div>
+  </div>`;
+}
+function renderTrend(childRaw, parentRaw){
+  const child = _parseTrend(childRaw);
+  const parent = _parseTrend(parentRaw);
+  if(!child.vals.length && !parent.vals.length) return '<span class="empty">无趋势</span>';
+  return `<div class="trend-cell">
+    ${child.vals.length ? _sparkRow('子体', child, '') : ''}
+    ${parent.vals.length ? _sparkRow('父体', parent, 'parent') : ''}
+  </div>`;
+}
+
+// 市场总览条
+function renderOverview(o){
+  if(!o || !o.sample_size){ overviewEl.style.display='none'; return ''; }
+  const cur = '$';
+  overviewEl.innerHTML =
+    `样本 <b>${safe(o.sample_size)}</b>　·　` +
+    `均价 <b>${safe(o.avg_price)}</b>　·　均评分 <b>${safe(o.avg_rating)}</b>　·　均评论 <b>${safe(o.avg_reviews)}</b><br>` +
+    `样本总销量 <b>${safe(o.total_units)}</b>　·　总销售额 <b>${cur}${safe(o.total_amount)}</b>　·　Top10 集中度 <b>${safe(o.top10_units_share)}</b>`;
+  overviewEl.style.display='block';
+}
+
+// About this item：摘要前2条 + hover 浮层全文
+function renderAbout(p){
+  let arr = [];
+  try{ arr = typeof p.about==='string' ? JSON.parse(p.about) : (Array.isArray(p.about)?p.about:[]); }catch(e){ arr=[]; }
+  if(!arr.length) return '<span class="empty">—</span>';
+  const preview = arr.slice(0,2).map(x=>`<li>${safe(x)}</li>`).join('');
+  const more = arr.length>2 ? '<li class="more">…</li>' : '';
+  const full = arr.map(x=>`<li>${safe(x)}</li>`).join('');
+  return `<ul class="about-summary">${preview}${more}</ul><div class="about-full"><ul>${full}</ul></div>`;
+}
+
+// 列定义（驱动 thead / renderRow / 隐藏列 / 转置）。已移除「尺寸/重量」「关于商品」。
+const COLS = [
+  {key:'img',    label:'主图',     thAttr:'style="min-width:104px"', tdClass:'img-cell', td:(p)=>{
+    const img = p.image_large || p.image_zoom || p.image || '';
+    const imgThumb = p.image || '';
+    const url = p.url || '#';
+    return `<a href="${safe(url)}" target="_blank"><img src="${safe(img)}" onerror="this.src='${safe(imgThumb)}';this.onerror=null;"></a>`;
+  }},
+  {key:'title',  label:'标题',     sort:'title', tdClass:'title-cell', td:(p)=>{
+    const url = p.url || '#';
+    return `<a href="${safe(url)}" target="_blank">${safe(p.title || '(无标题)')}</a>`;
+  }},
+  {key:'asin',   label:'ASIN',     td:(p)=>`<div class="asin-line"><span class="lbl">子ASIN:</span> <b>${fmt(p.asin)}</b></div><div class="parent-line"><span class="lbl">父ASIN:</span> ${fmt(p.parent)}</div>`},
+  {key:'brand',  label:'品牌',     sort:'brand', td:(p)=>{
+    const u = p.brand_url ? `https://www.amazon.com/${p.brand_url}` : '#';
+    return `<a class="brand-link" href="${safe(u)}" target="_blank">${fmt(p.brand)}</a>`;
+  }},
+  {key:'badges', label:'徽章',     td:(p)=>renderBadges(p.badges)},
+  {key:'price',  label:'价格',     sort:'price', td:(p)=>`<div><b style="color:#111">${safe(p.currency)}${fmt(p.price)}</b></div>${p.list_price?`<div style="text-decoration:line-through;color:#aaa;font-size:11px">${safe(p.currency)}${safe(p.list_price)}</div>`:''}${p.discount_off_list_pct?`<div style="color:#c00;font-size:11px;font-weight:600">-${safe(p.discount_off_list_pct)}%</div>`:''}`},
+  {key:'rating', label:'评分',     sort:'rating', td:(p)=>`${stars(p.rating)}<div class="rating-meta">${p.rating?safe(p.rating):''}${p.reviews?` (${safe(p.reviews)})`:''}</div>`},
+  {key:'date',   label:'上架时间',  sort:'available_date', td:(p)=>`<div class="date-line">${p.available_date?safe(p.available_date):'<span class="empty">—</span>'}</div><div class="days-line">${p.available_days?('上架 '+safe(p.available_days)+' 天'):''}</div>`},
+  {key:'variations', label:'变体数', sort:'variations', tdStyle:'text-align:center', td:(p)=>fmt(p.variations)},
+  {key:'catpath', label:'类目路径', td:(p)=>renderCatPath(p)},
+  {key:'bsr',    label:'BSR排名',  sort:'bsr', td:(p)=>renderBsr(p)},
+  {key:'seller', label:'卖家',     td:(p)=>renderSeller(p)},
+  {key:'sales',  label:'销量',     sort:'units', td:(p)=>renderSales(p)},
+  {key:'amount', label:'销售额',   sort:'amount', td:(p)=>renderAmount(p)},
+  {key:'trend',  label:'销量趋势', td:(p)=>renderTrend(p.amz_unit_trend, p.parent_unit_trend)},
+];
+
+let hiddenCols = new Set();   // 被隐藏的列 key（隐藏列功能用；空集=全显）
+function visibleCols(){ return COLS.filter(c => !hiddenCols.has(c.key)); }
+
+function renderRow(p, idx){
+  return `<tr>${visibleCols().map(c => `<td ${c.tdClass?`class="${c.tdClass}"`:''} ${c.tdStyle?`style="${c.tdStyle}"`:''}>${c.td(p)}</td>`).join('')}</tr>`;
+}
+
+// 视图状态：原始数据 + 排序/搜索
+let ALL = [];
+let sortKey = null;   // 当前排序列 key（null = 不排序）
+let sortDir = 1;      // 1 升序 / -1 降序
+let query = '';       // 搜索关键字
+
+function toNum(v){ const n = parseFloat(v); return isNaN(n) ? null : n; }
+
+// 取某列用于排序的值（数值列返回 number，文本列返回小写串，空统一为 null）
+function sortValue(p, key){
+  if(key === 'bsr') return toNum(p.bsr_list__main_rank);
+  if(key === 'title' || key === 'brand' || key === 'available_date'){
+    const s = p[key]; return (s===undefined||s===null||s==='') ? null : String(s).toLowerCase();
+  }
+  return toNum(p[key]); // price / units / rating / variations / amount
+}
+
+// 依据 query + sortKey/sortDir 计算当前应展示的行（不修改 ALL）
+function visibleProducts(){
+  let rows = ALL.filter(p => p && (p.asin || p.title));
+  if(query){
+    const q = query.toLowerCase();
+    rows = rows.filter(p => [p.title, p.asin, p.parent, p.brand, p.seller_name]
+      .some(v => v && String(v).toLowerCase().includes(q)));
+  }
+  if(sortKey){
+    rows = [...rows].sort((a, b) => {
+      const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+      const aE = av===null, bE = bv===null;   // 空值沉底
+      if(aE && bE) return 0;
+      if(aE) return 1;
+      if(bE) return -1;
+      if(av === bv) return 0;
+      return (av < bv ? -1 : 1) * sortDir;
+    });
+  }
+  return rows;
+}
+
+// 切换排序：点同列升→降→取消；点新列默认升序
+function toggleSort(key){
+  if(sortKey === key){
+    if(sortDir === 1) sortDir = -1;
+    else { sortKey = null; sortDir = 1; }
+  } else { sortKey = key; sortDir = 1; }
+  rerender();
+}
+
+// 刷新表头排序指示符
+function updateSortIndicators(){
+  container.querySelectorAll('th[data-sort]').forEach(th => {
+    const on = th.dataset.sort === sortKey;
+    th.classList.toggle('sort-asc',  on && sortDir ===  1);
+    th.classList.toggle('sort-desc', on && sortDir === -1);
+  });
+}
+
+// 计数文案：搜索时显示「命中 X / 共 Y」
+function updateCount(visible){
+  const total = ALL.length;
+  countText.textContent = query ? `命中 ${visible} / 共 ${total} 个商品` : `共 ${total} 个商品`;
+}
+
+// 统一重渲染入口
+let transposed = false;
+function rerender(){
+  const rows = visibleProducts();
+  if(transposed) renderTransposed(rows); else render(rows);
+  updateSortIndicators();
+  updateCount(rows.length);
+}
+
+// —— 可拖拽列宽 + localStorage 记忆 ——
+const COL_LS_KEY = 'ss_col_widths_v1';
+let suppressNextClick = false;
+
+function applyColWidth(colIdx, w){
+  container.querySelectorAll(`table.products tr > *:nth-child(${colIdx+1})`).forEach(c => {
+    c.style.width = w + 'px';
+  });
+}
+function saveColWidths(){
+  const widths = {};
+  container.querySelectorAll('table.products thead th').forEach((th, i) => {
+    if(th.style.width) widths[i] = parseInt(th.style.width, 10);
+  });
+  try { localStorage.setItem(COL_LS_KEY, JSON.stringify(widths)); } catch(e) {}
+}
+function loadColWidths(){
+  try { return JSON.parse(localStorage.getItem(COL_LS_KEY) || '{}'); } catch(e) { return {}; }
+}
+function initResizers(){
+  container.querySelectorAll('table.products thead th').forEach((th, i) => {
+    if(th.querySelector('.col-resizer')) return;
+    const r = document.createElement('div');
+    r.className = 'col-resizer';
+    r.addEventListener('mousedown', e => startResize(e, i));
+    th.appendChild(r);
+  });
+}
+function startResize(e, colIdx){
+  e.preventDefault(); e.stopPropagation();
+  const th = e.currentTarget.parentNode;
+  const startX = e.clientX;
+  const startW = th.getBoundingClientRect().width;
+  suppressNextClick = true;                 // 拖拽后抑制本次 click，避免误触发排序
+  function onMove(ev){
+    const w = Math.max(60, Math.round(startW + (ev.clientX - startX)));
+    applyColWidth(colIdx, w);
+  }
+  function onUp(){
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    saveColWidths();
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function render(products){
+  products = products.filter(p=>p&&(p.asin||p.title));
+  if(!products.length){ container.innerHTML='<p style="padding:20px;margin:20px">没有有效商品行</p>'; return; }
+  dropzone.style.display='none';
+  toolbar.style.display='flex';
+  countText.textContent = `共 ${products.length} 个商品`;
+
+  const thead = `<thead><tr>${visibleCols().map(c => `<th ${c.thAttr||''} ${c.sort?`data-sort="${c.sort}"`:''}>${c.label}</th>`).join('')}</tr></thead>`;
+
+  const tbody = `<tbody>${products.map(renderRow).join('')}</tbody>`;
+
+  container.innerHTML = `<div class="table-wrap"><div class="scroll">
+    <table class="products">${thead}${tbody}</table>
+  </div></div>`;
+  initResizers();                                          // 注入拖拽手柄
+  Object.entries(loadColWidths()).forEach(([i, w]) => applyColWidth(+i, w));  // 恢复记忆宽度
+  const tbl = container.querySelector('table.products');   // 隐藏列后剩余列按列数自动收缩铺满
+  if(tbl) tbl.style.minWidth = Math.max(600, visibleCols().length * 120) + 'px';
+}
+
+// —— 转置视图：字段为行、商品为列（转置下「隐藏列」即隐藏对应字段行；不排序）——
+function renderTransposed(products){
+  products = products.filter(p=>p&&(p.asin||p.title));
+  const cols = visibleCols();   // 转置下隐藏列 = 隐藏对应字段行
+  const body = `<tbody>${cols.map(c =>
+    `<tr><th class="field-name">${c.label}</th>${products.map(p=>`<td>${c.td(p)}</td>`).join('')}</tr>`
+  ).join('')}</tbody>`;
+  container.innerHTML = `<div class="table-wrap"><div class="scroll"><table class="products transposed">${body}</table></div></div>`;
+}
+const transposeToggle = document.getElementById('transposeToggle');
+transposeToggle.addEventListener('click', () => {
+  transposed = !transposed;
+  transposeToggle.classList.toggle('active', transposed);
+  transposeToggle.textContent = transposed ? '转置 ✓' : '转置';
+  colToggle.textContent = transposed ? '行 ⚙' : '列 ⚙';   // 转置下按钮文字改为「行」
+  if(colPicker.style.display==='block') colPicker.style.display='none';   // 切换视图时关闭浮层
+  rerender();
+});
+
+// 统一入口：兼容内联对象 {products,overview} / 纯数组 / fetch 到的 products.json
+function normalize(d){
+  if(Array.isArray(d)) return {products:d, overview:null};
+  if(d && Array.isArray(d.products)) return {products:d.products, overview:d.overview||null};
+  return {products:[], overview:null};
+}
+function show(d){
+  const {products, overview} = normalize(d);
+  ALL = products;            // 保存原始全集
+  loadHiddenCols();          // 恢复隐藏列记忆
+  renderOverview(overview);
+  rerender();                // 走过滤/排序统一入口
+}
+
+// 表头点击排序（事件委托挂在稳定的 container 上，重渲染不丢）
+container.addEventListener('click', e => {
+  if(suppressNextClick){ suppressNextClick = false; return; }   // 拖拽列宽后跳过本次点击
+  const th = e.target.closest('th[data-sort]');
+  if(th) toggleSort(th.dataset.sort);
+});
+
+// 搜索框：输入即过滤
+document.getElementById('searchBox').addEventListener('input', e => {
+  query = e.target.value.trim();
+  rerender();
+});
+
+// —— 隐藏列（「列 ⚙」浮层，仅普通视图）——
+const HIDDEN_LS_KEY = 'ss_hidden_cols_v1';
+const colToggle = document.getElementById('colToggle');
+const colPicker = document.getElementById('colPicker');
+function saveHiddenCols(){ try{ localStorage.setItem(HIDDEN_LS_KEY, JSON.stringify([...hiddenCols])); }catch(e){} }
+function loadHiddenCols(){ try{ hiddenCols = new Set(JSON.parse(localStorage.getItem(HIDDEN_LS_KEY)||'[]')); }catch(e){ hiddenCols = new Set(); } }
+function renderColPicker(){
+  colPicker.innerHTML = COLS.map(c => `<label><input type="checkbox" ${hiddenCols.has(c.key)?'':'checked'} data-col="${c.key}"> ${c.label}</label>`).join('');
+}
+colToggle.addEventListener('click', e => {
+  e.stopPropagation();
+  if(colPicker.style.display === 'block'){ colPicker.style.display='none'; return; }
+  renderColPicker();
+  colPicker.style.display = 'block';
+});
+colPicker.addEventListener('change', e => {
+  const cb = e.target.closest('input[data-col]');
+  if(!cb) return;
+  const key = cb.dataset.col;
+  if(cb.checked) hiddenCols.delete(key); else hiddenCols.add(key);
+  saveHiddenCols();
+  rerender();
+});
+document.addEventListener('click', e => {
+  if(colPicker.style.display==='block' && !colPicker.contains(e.target) && e.target!==colToggle) colPicker.style.display='none';
+});
+
+// 内联数据（由 html_render.py 注入；模板里为空对象 {} → 走 dropzone / 同目录 fetch 兜底）
+const DATA = /*__DATA__*/{}/*__END__*/;
+if(DATA && (Array.isArray(DATA) || Array.isArray(DATA.products))){
+  show(DATA);
+}else{
+  // 无内联数据：尝试读同目录 products.json；失败则保留 dropzone 手动加载
+  fetch('products.json').then(r=>r.ok?r.json():Promise.reject()).then(show).catch(()=>{});
+}
+</script>
+</body>
+</html>

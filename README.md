@@ -53,11 +53,12 @@ python asin_pipeline.py
 
 ## 输出
 
-`output/asins_{数量}_{日期}/`（**仅 JSON**）：
+**扁平单份**：`output/` 每次运行前自动清空上一次结果，永远只保留最新一次的 3 个文件：
 - `products.json`：每个商品一个对象，全字段保留（去空值、去冗余原始 JSON、camelCase 转下划线、嵌套扁平化），并派生 `image_large`（1500px 高清封面）、`url`（商品详情页链接）、`available_date`（上架日期 yyyy-mm-dd）
 - `market_overview.json`：派生市场总览（均价 / 均评分 / 总销量 / 总销售额 / Top10 集中度 / 价格与评分分布）
+- `products.html`：**自包含富表格视图**——把上面两份 JSON 直接内联渲染，**双击用浏览器打开即可查看**（无需服务器 / 不依赖 CSV；`file://` 下也能用）。无内联数据时退化为拖拽 `products.json` 手动加载的查看器。
 
-终端同步打印关键字段摘要表 + 市场总览。
+终端同步打印关键字段摘要表 + 市场总览，并给出 HTML 路径。
 
 ## 配置（config.json）
 
@@ -79,7 +80,9 @@ sellersprite_signing.py # tk 反爬签名（TKK 算法）
 amazon_search.py        # 亚马逊详情页折扣抓取（Playwright）
 field_merge.py          # 字段扁平化 + camelCase→snake_case + 高清图派生
 market_overview.py      # 派生市场总览
-output_writer.py        # JSON 落地
+output_writer.py        # 扁平单份 JSON 落地（每次清空 output）
+html_render.py          # 把 products.json 内联渲染进自包含 products.html
+products.html           # 富表格视图模板（16 列，BSR/趋势/价格等）
 config.json             # 站点 / 并发 / 批大小 / 限速 / 重试
 tests/                  # pytest：签名黄金值、解析、并发、端到端落盘
 ```

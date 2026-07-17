@@ -178,14 +178,22 @@ async fn write_outputs(
     overview: &crate::models::MarketOverview,
     failures: &[Failure],
 ) -> Result<()> {
-    if tokio::fs::try_exists(out_dir).await.unwrap_or(false) {
-        tokio::fs::remove_dir_all(out_dir)
-            .await
-            .map_err(|err| AppError::Anyhow(err.into()))?;
-    }
     tokio::fs::create_dir_all(out_dir)
         .await
         .map_err(|err| AppError::Anyhow(err.into()))?;
+    let mut entries = tokio::fs::read_dir(out_dir)
+        .await
+        .map_err(|err| AppError::Anyhow(err.into()))?;
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|err| AppError::Anyhow(err.into()))?
+    {
+        let path = entry.path();
+        if tokio::fs::remove_dir_all(&path).await.is_err() {
+            let _ = tokio::fs::remove_file(&path).await;
+        }
+    }
     tokio::fs::write(
         out_dir.join("products.json"),
         serde_json::to_vec_pretty(products).map_err(anyhow::Error::from)?,

@@ -10,7 +10,8 @@ WORKDIR /app
 COPY backend/Cargo.toml backend/Cargo.lock ./backend/
 RUN mkdir -p backend/src && echo 'fn main() {}' > backend/src/main.rs && cargo build --release --manifest-path backend/Cargo.toml
 COPY backend/ ./backend/
-RUN cargo build --release --manifest-path backend/Cargo.toml
+RUN find backend/src -type f -exec touch {} + \
+    && cargo build --release --manifest-path backend/Cargo.toml
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update \

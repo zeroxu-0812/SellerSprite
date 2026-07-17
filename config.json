@@ -5,7 +5,7 @@
   "extension_id": "lnbmbgocenenhhhdojdielgnmeflbnfb",
   "source": "chrome",
   "concurrency": {
-    "workers": 3
+    "workers": 2
   },
   "quick_view": {
     "base_url": "https://e.sellersprite.com/v2/extension/competitor-lookup/quick-view",

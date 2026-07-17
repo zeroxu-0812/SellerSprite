@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
@@ -25,6 +26,8 @@ DEFAULT_LOGIN_URL = "https://www.sellersprite.com/v2/extension/signin"
 EXTENSION_ID = "lnbmbgocenenhhhdojdielgnmeflbnfb"
 DEFAULT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36")
+ROOT = Path(__file__).resolve().parent
+CLIENT_TOKENS_PATH = ROOT / ".client_tokens.json"
 
 
 def _truthy(name: str, default: bool = False) -> bool:
@@ -35,15 +38,37 @@ def _truthy(name: str, default: bool = False) -> bool:
 
 
 def load_env() -> None:
-    p = Path(__file__).resolve().parent / ".env"
+    p = ROOT / ".env"
     if not p.exists():
         return
     for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+def _load_or_create_client_tokens(path: Path = CLIENT_TOKENS_PATH) -> dict:
+    """生成并缓存扩展客户端稳定值。
+
+    卖家精灵 signin 只返回 auth-token，不返回 auth-fp/random-token。旧实现要求从
+    Chrome 扩展抓包复制这两个值；这里改为在本地生成一组稳定值，降低 .env 配置门槛。
+    如果线上接口后续对 auth-fp 格式收紧，仍可用 KEEPA_AUTH_FP/KEEPA_RANDOM_TOKEN 覆盖。
+    """
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if data.get("auth-fp") and data.get("random-token"):
+                return {"auth-fp": str(data["auth-fp"]), "random-token": str(data["random-token"])}
+        except (OSError, json.JSONDecodeError):
+            pass
+    data = {
+        "auth-fp": uuid.uuid4().hex,
+        "random-token": str(uuid.uuid4()),
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return data
 
 
 def _get_by_path(data, path: str):
@@ -102,24 +127,23 @@ def login(_urlopen=urlopen) -> dict:
 
 
 def extract_headers(response: dict) -> dict:
-    """auth-token 来自登录响应；auth-fp/random-token/cookie 来自 .env（客户端稳定值）。"""
+    """auth-token 来自登录响应；客户端稳定值优先取 .env，缺省则本地生成并缓存。"""
     headers = {}
     token_path = (os.getenv("KEEPA_RESPONSE_AUTH_TOKEN_PATH") or "data.token").strip()
     token = _get_by_path(response, token_path)
     if token is not None and str(token).strip():
         headers["auth-token"] = str(token).strip()
-    for key, env_key in (("auth-fp", "KEEPA_AUTH_FP"),
-                         ("random-token", "KEEPA_RANDOM_TOKEN"),
-                         ("cookie", "KEEPA_COOKIE")):
-        value = (os.getenv(env_key) or "").strip()
-        if value:
-            headers[key] = value
+    client_tokens = _load_or_create_client_tokens()
+    headers["auth-fp"] = (os.getenv("KEEPA_AUTH_FP") or client_tokens["auth-fp"]).strip()
+    headers["random-token"] = (os.getenv("KEEPA_RANDOM_TOKEN") or client_tokens["random-token"]).strip()
+    cookie = (os.getenv("KEEPA_COOKIE") or "").strip()
+    if cookie:
+        headers["cookie"] = cookie
     if not headers.get("auth-token"):
         raise RuntimeError("登录响应未取到 auth-token，请检查 KEEPA_RESPONSE_AUTH_TOKEN_PATH")
     missing = [k for k in ("auth-fp", "random-token") if not headers.get(k)]
     if missing:
-        raise RuntimeError("缺少客户端值（.env）: " + ", ".join(missing) +
-                           " —— 这两个值稳定不变，从扩展抓包获取一次即可")
+        raise RuntimeError("缺少客户端值: " + ", ".join(missing))
     return headers
 
 

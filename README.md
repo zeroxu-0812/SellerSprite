@@ -1,101 +1,170 @@
-# 卖家精灵 ASIN 爬虫
+# SellerSprite 核心竞手分析
 
-输入亚马逊 ASIN（粘贴或文件）→ 并发抓取卖家精灵 `competitor-lookup` 全量数据 + 亚马逊详情页折扣 → 落地 JSON。
+面向 ASIN 列表的竞手分析工具。当前主线已收束为：
 
-## 它做什么
+- `backend/`：Rust + Axum，负责鉴权、卖家精灵竞手接口、Amazon 详情页补充、清洗、进度任务和静态前端托管。
+- `frontend/`：Vue 3 + TypeScript + Vite，负责 ASIN 输入、进度条、核心竞手矩阵、指标卡和交互式 HTML 导出。
+- `refresh_tokens.py` + `sellersprite_signing.py`：Rust 后端调用的卖家精灵登录 token 刷新脚本。
 
-给定一批 ASIN，伪装成卖家精灵 Chrome 扩展请求 `e.sellersprite.com` 的 `competitor-lookup` 接口，一次性拿回每个 ASIN 的全量字段：
+旧 Python CLI、Streamlit、本地 `products.html` 模板和 pytest 旧测试已移除。
 
-- **亚马逊侧**：标题、准确 USD 现价、评分、评论数、BSR 排名、封面图、badges
-- **卖家精灵增强**：月销量 / 销售额 / 利润 / FBA 费、月度销量趋势 `amz_unit_trends`、评论增长、Listing 质量分 `lqs`
-- **卖家信息**：卖家公司全称 / 地址 / 国别（`seller_dto`）
-- **折扣**：划线价 `list_price` / 折扣% `discount_off_list_pct`（competitor-lookup 不返回，额外抓亚马逊详情页补）
+## 环境变量
 
-**并发抓取**（默认 3 worker）：competitor-lookup 按批（每批 20）并发请求，折扣详情页也并发抓取。
+复制 `.env.example` 为 `.env`，最小只需要：
 
-## 安装
-
-```
-pip install -r requirements.txt
-playwright install chromium
+```bash
+KEEPA_LOGIN_USERNAME=卖家精灵账号
+KEEPA_LOGIN_PASSWORD=卖家精灵密码
 ```
 
-## 配置鉴权
+默认 `KEEPA_LOGIN_PASSWORD_MD5=true`，表示 `.env` 中填写明文密码，刷新脚本会自动 MD5。若直接填写 MD5，改为：
 
-复制 `.env.example` 为 `.env`，填卖家精灵登录账号 + 两个客户端稳定值：
-
-```
-KEEPA_AUTH_FP=<抓包获取，稳定不变>
-KEEPA_RANDOM_TOKEN=<抓包获取，稳定不变>
-KEEPA_LOGIN_USERNAME=<卖家精灵账号>
-KEEPA_LOGIN_PASSWORD=<密码明文，自动 MD5；或直接填 MD5 哈希并设 KEEPA_LOGIN_PASSWORD_MD5=false>
+```bash
+KEEPA_LOGIN_PASSWORD_MD5=false
 ```
 
-- `KEEPA_AUTH_FP` / `KEEPA_RANDOM_TOKEN`：从扩展 devtools 抓任意一条 sellersprite 请求头获取（一次即可，长期不变）。
-- `auth-token` **无需手填**——token 过期会自动登录刷新。
+通常不需要手填 `auth-token`。后端会按需执行：
 
-## 运行
-
-```
-python asin_pipeline.py
+```bash
+python3 refresh_tokens.py
 ```
 
-然后两种输入方式（自动识别）：
-- **粘贴 ASIN**：逗号 / 空格 / 换行分隔多个，回车开始
-- **文件路径**：输入含 ASIN 的 `.txt` 文件路径（一行多个或一个都可，支持 `#` 注释），适合批量
+生成并缓存运行期鉴权信息。缓存文件 `.token_cache.json`、`.client_tokens.json` 不应提交。
 
-输入 `q` 退出。
+## 本地开发
 
+后端：
+
+```bash
+cargo run --manifest-path backend/Cargo.toml
 ```
-输入 ASIN 或文件路径: B0F1QHNFJP B0FN3QLFVG
-输入 ASIN 或文件路径: asins.txt
+
+默认监听 `http://127.0.0.1:8787`。
+
+前端：
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
+
+默认访问 `http://127.0.0.1:5173`，Vite 会把 `/api` 代理到 Rust 后端。
+
+检查：
+
+```bash
+cargo check --manifest-path backend/Cargo.toml
+cd frontend && npm run build
+```
+
+## 生产部署：Docker
+
+构建镜像：
+
+```bash
+docker compose build
+```
+
+启动：
+
+```bash
+docker compose up -d
+```
+
+访问：
+
+```text
+http://服务器IP:8787
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8787/api/health
+```
+
+容器说明：
+
+- 镜像内会构建前端静态文件，并由 Rust 后端托管。
+- 运行时需要 Python 3，用于执行 `refresh_tokens.py`。
+- `docker-compose.yml` 默认挂载 `./output:/app/output`，保留最近一次输出 JSON。
+- `.env` 通过 `env_file` 注入容器，不会被 Docker build 打包进镜像。
+
+## API
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/jobs` | 创建分析任务，返回 `job_id` 和初始进度 |
+| `GET` | `/api/jobs/:job_id` | 查询任务进度，完成时返回结果 |
+
+任务请求示例：
+
+```json
+{
+  "asins": ["B0F1QHNFJP", "B09PVMTM9W"],
+  "mode": "full",
+  "workers": 2
+}
+```
+
+`mode`：
+
+- `fast`：只请求卖家精灵竞手接口。
+- `full`：在卖家精灵数据基础上补 Amazon 详情页折扣和 About 信息。
+
+`workers` 表示 Amazon 详情页补抓并发数。默认配置为 `2`，生产环境建议保持 `1-2`。
+
+## 风控与限速
+
+当前措施：
+
+- 卖家精灵竞手接口按批次串行请求。
+- 多批次之间使用 `config.json` 的 `quick_view.delay_seconds_min/max` 延迟。
+- Amazon 详情页补抓受 `workers` 控制，并在请求前加入延迟。
+- 卖家精灵请求有超时、重试、backoff。
+- auth 过期会自动刷新 token 并重试。
+- 前端显示真实任务进度，不使用假进度条。
+
+生产建议：
+
+- 批量 ASIN 较多时，将 `workers` 调为 `1`。
+- 不要把 `quick_view.delay_seconds_min/max` 调得过低。
+- 如果 Amazon 详情页频繁失败，优先使用 `fast` 模式或降低并发。
 
 ## 输出
 
-**扁平单份**：`output/` 每次运行前自动清空上一次结果，永远只保留最新一次的 3 个文件：
-- `products.json`：每个商品一个对象，全字段保留（去空值、去冗余原始 JSON、camelCase 转下划线、嵌套扁平化），并派生 `image_large`（1500px 高清封面）、`url`（商品详情页链接）、`available_date`（上架日期 yyyy-mm-dd）
-- `market_overview.json`：派生市场总览（均价 / 均评分 / 总销量 / 总销售额 / Top10 集中度 / 价格与评分分布）
-- `products.html`：**自包含富表格视图**——把上面两份 JSON 直接内联渲染，**双击用浏览器打开即可查看**（无需服务器 / 不依赖 CSV；`file://` 下也能用）。无内联数据时退化为拖拽 `products.json` 手动加载的查看器。
+每次运行会写入：
 
-终端同步打印关键字段摘要表 + 市场总览，并给出 HTML 路径。
+```text
+output/products.json
+output/market_overview.json
+output/failures.json
+```
 
-## 配置（config.json）
-
-| 项 | 说明 |
-|---|---|
-| `concurrency.workers` | 并发线程数（默认 3）。设为 1 则退回顺序抓取（competitor-lookup 批间延时 5–8s） |
-| `quick_view.batch_size` | competitor-lookup 每批 ASIN 数（默认 20） |
-| `quick_view.retry_attempts` | 408/429/5xx/超时重试次数（默认 2） |
-| `amazon.user_agent` | 抓详情页用的 UA |
+前端的“导出 HTML”会在浏览器侧生成交互式报告，不依赖服务器文件。
 
 ## 项目结构
 
+```text
+.
+├── backend/                  # Rust Axum 后端
+│   └── src/
+│       ├── api.rs            # API 路由、任务接口、静态文件托管
+│       ├── auth.rs           # token 缓存与刷新命令调用
+│       ├── pipeline.rs       # ASIN 分析编排、进度推进、输出写入
+│       ├── progress.rs       # 内存任务进度状态
+│       ├── sellersprite.rs   # 卖家精灵 competitor-lookup
+│       ├── amazon.rs         # Amazon 详情页解析
+│       └── transform.rs      # 字段扁平化和清洗
+├── frontend/                 # Vue 3 + TypeScript 前端
+│   └── src/
+│       ├── components/       # 控制栏、指标卡、矩阵表格
+│       └── utils/            # 字段渲染、竞手分析、HTML 导出
+├── config.json               # 站点、并发、批大小、延迟、重试配置
+├── refresh_tokens.py          # 卖家精灵登录刷新 auth-token
+├── sellersprite_signing.py    # tk 签名算法
+├── Dockerfile
+└── docker-compose.yml
 ```
-asin_pipeline.py        # 编排 + CLI：输入 → 并发增强 → JSON 落地
-sellersprite_enrich.py  # competitor-lookup 批量调用（并发 + 重试 + 鉴权自愈）
-sellersprite_auth.py    # 鉴权头管理（并发安全：锁 + 双检缓存，token 过期自动登录刷新）
-refresh_tokens.py       # 自动登录 signin 刷新 auth-token
-sellersprite_signing.py # tk 反爬签名（TKK 算法）
-amazon_search.py        # 亚马逊详情页折扣抓取（Playwright）
-field_merge.py          # 字段扁平化 + camelCase→snake_case + 高清图派生
-market_overview.py      # 派生市场总览
-output_writer.py        # 扁平单份 JSON 落地（每次清空 output）
-html_render.py          # 把 products.json 内联渲染进自包含 products.html
-products.html           # 富表格视图模板（16 列，BSR/趋势/价格等）
-config.json             # 站点 / 并发 / 批大小 / 限速 / 重试
-tests/                  # pytest：签名黄金值、解析、并发、端到端落盘
-```
-
-## 测试
-
-```
-python -m pytest -v
-```
-
-## 鉴权与稳健性
-
-- **token 分钟级过期**：`auth-token` 几分钟失效，靠 `refresh_tokens.py` 自动登录刷新（`KEEPA_TOKEN_REFRESH_COMMAND`）；并发时锁保证只登录一次。
-- **鉴权自愈**：接口返回过期码（401 / `ERR_NEED_RE_AUTHORIZED` 等）→ 清缓存 → 刷新 → 重试一次 → 仍失败熔断。
-- **业务错误**：单批业务错误码跳过该批，不中断整体。
-- **反爬**：抓亚马逊详情页可能遇验证码 / 封 IP，必要时调低 `concurrency.workers` 或加代理。

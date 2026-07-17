@@ -1,0 +1,92 @@
+mod amazon;
+mod api;
+mod auth;
+mod config;
+mod error;
+mod models;
+mod overview;
+mod pipeline;
+mod progress;
+mod sellersprite;
+mod signing;
+mod transform;
+
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+
+use api::{app, AppState};
+use auth::TokenManager;
+use config::AppConfig;
+use progress::JobStore;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("backend has project parent")
+        .to_path_buf();
+    load_env(root.join(".env")).await?;
+    default_refresh_command();
+    let config = AppConfig::load(root.join("config.json")).await?;
+    let state = Arc::new(AppState {
+        root: root.clone(),
+        config,
+        token_manager: TokenManager::new(root.join(".token_cache.json")),
+        jobs: JobStore::default(),
+        client: reqwest::Client::builder()
+            .user_agent("SellerSprite-Rust/0.1")
+            .build()?,
+    });
+
+    let addr: SocketAddr = std::env::var("SELLERSPRITE_BIND")
+        .unwrap_or_else(|_| "127.0.0.1:8787".to_string())
+        .parse()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    tracing::info!("backend listening on http://{addr}");
+    axum::serve(listener, app(state)).await?;
+    Ok(())
+}
+
+async fn load_env(path: PathBuf) -> anyhow::Result<()> {
+    let raw = match tokio::fs::read_to_string(path).await {
+        Ok(raw) => raw,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || !line.contains('=') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+        if std::env::var_os(key.trim()).is_none() {
+            std::env::set_var(key.trim(), value);
+        }
+    }
+    Ok(())
+}
+
+fn default_refresh_command() {
+    if std::env::var("KEEPA_TOKEN_REFRESH_COMMAND")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .is_some()
+    {
+        return;
+    }
+    let has_login = std::env::var("KEEPA_LOGIN_USERNAME")
+        .ok()
+        .is_some_and(|v| !v.trim().is_empty())
+        && std::env::var("KEEPA_LOGIN_PASSWORD")
+            .ok()
+            .is_some_and(|v| !v.trim().is_empty());
+    if has_login {
+        std::env::set_var("KEEPA_TOKEN_REFRESH_COMMAND", "python3 refresh_tokens.py");
+    }
+}

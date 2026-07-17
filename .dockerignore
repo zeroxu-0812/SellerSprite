@@ -1,0 +1,14 @@
+.git
+.env
+.token_cache.json
+.client_tokens.json
+output
+backend/target
+frontend/node_modules
+frontend/dist
+__pycache__
+*.pyc
+.pytest_cache
+.DS_Store
+Dockerfile
+docker-compose.yml

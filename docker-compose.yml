@@ -1,0 +1,14 @@
+services:
+  sellersprite:
+    build:
+      context: .
+    image: sellersprite-competitor:latest
+    env_file:
+      - .env
+    environment:
+      SELLERSPRITE_BIND: 0.0.0.0:8787
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./output:/app/output
+    restart: unless-stopped

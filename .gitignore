@@ -2,8 +2,12 @@ __pycache__/
 *.pyc
 .env
 .token_cache.json
+.client_tokens.json
 output/
 .venv/
 .pytest_cache/
 test_out.json
 .superpowers/
+backend/target/
+frontend/node_modules/
+frontend/dist/

@@ -58,10 +58,23 @@ fn has_deal(html: &str) -> bool {
 }
 
 fn parse_price(text: &str) -> Option<f64> {
-    Regex::new(r#"-?\d+(?:\.\d+)?"#)
+    let raw = Regex::new(r#"-?[\d][\d\s,.]*"#)
         .ok()?
-        .find(&text.replace(',', ""))
-        .and_then(|m| m.as_str().parse().ok())
+        .find(text)?
+        .as_str()
+        .replace(' ', "");
+    let comma = raw.rfind(',');
+    let dot = raw.rfind('.');
+    let normalized = match (comma, dot) {
+        (Some(c), Some(d)) if c > d => raw.replace('.', "").replace(',', "."),
+        (Some(_), Some(_)) => raw.replace(',', ""),
+        (Some(c), None) if raw.len().saturating_sub(c + 1) == 2 => raw.replace(',', "."),
+        (Some(_), None) => raw.replace(',', ""),
+        (None, Some(d)) if raw.len().saturating_sub(d + 1) == 2 => raw,
+        (None, Some(_)) => raw.replace('.', ""),
+        (None, None) => raw,
+    };
+    normalized.parse().ok()
 }
 
 fn parse_about(html: &str) -> Vec<String> {

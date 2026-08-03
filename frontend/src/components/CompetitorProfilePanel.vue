@@ -1,12 +1,14 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { CompetitorProfile, BenchmarkMetric } from '../utils/competitorAnalysis'
 import { delta, numeric, pct, text } from '../utils/competitorAnalysis'
-import { fmt, parseList, safe } from '../utils/formatters'
+import { fmt, money, parseList, safe } from '../utils/formatters'
 
 const props = defineProps<{
   profile: CompetitorProfile | null
   baseline: CompetitorProfile | null
   metric: BenchmarkMetric
+  marketplace: string
 }>()
 
 const metricFields: Record<BenchmarkMetric, { label: string; key: string }> = {
@@ -16,6 +18,18 @@ const metricFields: Record<BenchmarkMetric, { label: string; key: string }> = {
   bsr: { label: 'BSR差', key: 'bsr_list__main_rank' },
   reviews: { label: '评论差', key: 'reviews' },
 }
+
+const summaryItems = computed(() => {
+  const product = props.profile?.product
+  return [
+    { label: '产品定位', value: text(product?.product_identity) },
+    { label: '目标用户', value: text(product?.target_user) },
+    { label: '主要场景', value: text(product?.primary_scene) },
+    { label: '整体总结', value: text(product?.overall_summary) },
+  ]
+})
+
+const hasSummary = computed(() => summaryItems.value.some((item) => item.value !== '-'))
 
 function compareText() {
   if (!props.profile || !props.baseline) return '-'
@@ -46,6 +60,19 @@ function compareText() {
         <a v-if="profile.product.url" :href="String(profile.product.url)" target="_blank" rel="noreferrer">打开 Amazon 页面</a>
       </section>
 
+      <section v-if="hasSummary" class="profile-summary">
+        <div class="profile-section-heading">
+          <h4>商品信息摘要</h4>
+          <span>Listing 速览</span>
+        </div>
+        <dl class="summary-grid">
+          <div v-for="item in summaryItems" :key="item.label" class="summary-item">
+            <dt>{{ item.label }}</dt>
+            <dd>{{ item.value }}</dd>
+          </div>
+        </dl>
+      </section>
+
       <section class="profile-scoreboard">
         <article>
           <span>销量</span>
@@ -53,11 +80,11 @@ function compareText() {
         </article>
         <article>
           <span>销售额</span>
-          <strong>${{ text(profile.product.amount) }}</strong>
+          <strong>{{ money(profile.product.amount, marketplace) }}</strong>
         </article>
         <article>
           <span>价格</span>
-          <strong>${{ text(profile.product.price) }}</strong>
+          <strong>{{ money(profile.product.price, marketplace) }}</strong>
         </article>
         <article>
           <span>主 BSR</span>

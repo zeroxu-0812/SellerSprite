@@ -104,15 +104,20 @@ curl http://127.0.0.1:8787/api/health
 ```json
 {
   "asins": ["B0F1QHNFJP", "B09PVMTM9W"],
-  "mode": "full",
+  "includeSummary": true,
+  "includeDetails": true,
   "workers": 2
 }
 ```
 
-`mode`：
+抓取选项：
 
-- `fast`：只请求卖家精灵竞手接口。
-- `full`：在卖家精灵数据基础上补 Amazon 详情页折扣和 About 信息。
+- 两项均为 `false`：快速抓取，只请求卖家精灵竞手接口，也是默认模式。
+- `includeSummary: true`：在快速数据基础上生成商品信息摘要四项字段。
+- `includeDetails: true`：补抓 Amazon 详情页折扣和五点描述。
+- 两项可以独立启用，也可以同时启用；同时启用时为完整抓取。
+
+后端仍兼容旧请求中的 `mode: "fast"` 与 `mode: "full"`，新调用应使用上述两个选项。
 
 `workers` 表示 Amazon 详情页补抓并发数。默认配置为 `2`，生产环境建议保持 `1-2`。
 

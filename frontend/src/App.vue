@@ -5,10 +5,12 @@ import FailurePanel from './components/FailurePanel.vue'
 import MarketMetrics from './components/MarketMetrics.vue'
 import ProductTable from './components/ProductTable.vue'
 import RunControlPanel from './components/RunControlPanel.vue'
-import type { RunMode, RunProgress, RunResponse } from './types'
+import type { MarketplaceCode, RunProgress, RunResponse } from './types'
 
 const rawInput = ref('')
-const mode = ref<RunMode>('full')
+const marketplace = ref<MarketplaceCode>('com')
+const includeSummary = ref(false)
+const includeDetails = ref(false)
 const workers = ref(2)
 const loading = ref(false)
 const error = ref('')
@@ -39,7 +41,9 @@ async function run() {
   try {
     progress.value = await createJob({
       asins: asins.value,
-      mode: mode.value,
+      marketplace: marketplace.value,
+      includeSummary: includeSummary.value,
+      includeDetails: includeDetails.value,
       workers: workers.value,
     })
     pollProgress(progress.value.job_id)
@@ -94,6 +98,11 @@ const progressText = computed(() => {
   return `${progress.value.stage} ${current}/${total}${asin}`
 })
 
+const resultMarketplace = computed(() => {
+  const station = result.value?.products.find((product) => product.marketplace_station)?.marketplace_station
+  return String(station || marketplace.value)
+})
+
 onUnmounted(() => {
   stopPolling()
 })
@@ -124,26 +133,30 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <RunControlPanel
-      v-model:raw-input="rawInput"
-      v-model:mode="mode"
-      v-model:workers="workers"
-      :asin-count="asins.length"
-      :loading="loading"
-      :error="error"
-      @run="run"
-    />
+    <div class="page-content">
+      <RunControlPanel
+        v-model:raw-input="rawInput"
+        v-model:marketplace="marketplace"
+        v-model:include-summary="includeSummary"
+        v-model:include-details="includeDetails"
+        v-model:workers="workers"
+        :asin-count="asins.length"
+        :loading="loading"
+        :error="error"
+        @run="run"
+      />
 
-    <section class="workbench">
-      <div v-if="!result" class="empty-state">
-        <h2>左侧输入 ASIN</h2>
-      </div>
+      <section class="workbench">
+        <div v-if="!result" class="empty-state">
+          <h2>输入 ASIN 后开始分析</h2>
+        </div>
 
-      <template v-else>
-        <MarketMetrics :overview="result.overview" />
-        <FailurePanel v-if="result.failures.length" :failures="result.failures" />
-        <ProductTable :products="result.products" />
-      </template>
-    </section>
+        <template v-else>
+          <MarketMetrics :overview="result.overview" :marketplace="resultMarketplace" />
+          <FailurePanel v-if="result.failures.length" :failures="result.failures" />
+          <ProductTable :products="result.products" :marketplace="resultMarketplace" />
+        </template>
+      </section>
+    </div>
   </main>
 </template>

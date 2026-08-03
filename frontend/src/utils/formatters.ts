@@ -17,10 +17,50 @@ export function fmt(input: unknown): string {
   return safe(String(input))
 }
 
-export function money(value: unknown): string {
-  return typeof value === 'number'
-    ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`
-    : '-'
+export interface CurrencyMeta {
+  code: string
+  locale: string
+}
+
+const marketplaceCurrencies: Record<string, CurrencyMeta> = {
+  com: { code: 'USD', locale: 'en-US' },
+  us: { code: 'USD', locale: 'en-US' },
+  amazoncom: { code: 'USD', locale: 'en-US' },
+  it: { code: 'EUR', locale: 'it-IT' },
+  italy: { code: 'EUR', locale: 'it-IT' },
+  fr: { code: 'EUR', locale: 'fr-FR' },
+  france: { code: 'EUR', locale: 'fr-FR' },
+  es: { code: 'EUR', locale: 'es-ES' },
+  spain: { code: 'EUR', locale: 'es-ES' },
+  de: { code: 'EUR', locale: 'de-DE' },
+  germany: { code: 'EUR', locale: 'de-DE' },
+  uk: { code: 'GBP', locale: 'en-GB' },
+  gb: { code: 'GBP', locale: 'en-GB' },
+  couk: { code: 'GBP', locale: 'en-GB' },
+  jp: { code: 'JPY', locale: 'ja-JP' },
+  japan: { code: 'JPY', locale: 'ja-JP' },
+  cojp: { code: 'JPY', locale: 'ja-JP' },
+}
+
+export function currencyForMarketplace(marketplace: unknown): CurrencyMeta {
+  const raw = String(marketplace ?? 'com').trim().toLowerCase()
+  const compact = raw.replace(/[^a-z]/g, '')
+  return marketplaceCurrencies[raw] || marketplaceCurrencies[compact] || marketplaceCurrencies.com
+}
+
+export function money(value: unknown, marketplace: unknown = 'com'): string {
+  if (value == null || value === '') return '-'
+  const numeric = typeof value === 'number' ? value : Number(String(value).replaceAll(',', ''))
+  if (!Number.isFinite(numeric)) return '-'
+  const currency = currencyForMarketplace(marketplace)
+  const fractionDigits = currency.code === 'JPY' ? 0 : 2
+  return new Intl.NumberFormat(currency.locale, {
+    style: 'currency',
+    currency: currency.code,
+    currencyDisplay: 'symbol',
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(numeric)
 }
 
 export function integer(value: unknown): string {
@@ -64,4 +104,3 @@ export function parseTrend(input: unknown): {
   const total = values.reduce((sum, item) => sum + item.sales, 0)
   return { values, max, total }
 }
-

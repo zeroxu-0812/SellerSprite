@@ -6,8 +6,14 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "camelCase")]
 pub struct RunRequest {
     pub asins: Vec<String>,
-    #[serde(default = "RunMode::default")]
-    pub mode: RunMode,
+    #[serde(default, alias = "station")]
+    pub marketplace: Option<String>,
+    #[serde(default)]
+    pub include_summary: Option<bool>,
+    #[serde(default)]
+    pub include_details: Option<bool>,
+    #[serde(default)]
+    pub mode: Option<RunMode>,
     pub workers: Option<usize>,
 }
 
@@ -18,9 +24,12 @@ pub enum RunMode {
     Full,
 }
 
-impl Default for RunMode {
-    fn default() -> Self {
-        Self::Full
+impl RunRequest {
+    pub fn extraction_options(&self) -> (bool, bool) {
+        let legacy_full = self.mode == Some(RunMode::Full);
+        let include_details = self.include_details.unwrap_or(legacy_full);
+        let include_summary = self.include_summary.unwrap_or(legacy_full);
+        (include_summary, include_details)
     }
 }
 
@@ -59,4 +68,41 @@ pub struct MarketOverview {
     pub top10_units_share: Option<f64>,
     pub price_distribution: BTreeMap<String, usize>,
     pub rating_distribution: BTreeMap<String, usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(json: &str) -> RunRequest {
+        serde_json::from_str(json).expect("valid request")
+    }
+
+    #[test]
+    fn defaults_to_fast_extraction() {
+        let request = request(r#"{"asins":["B0BHV5TTL6"]}"#);
+        assert_eq!(request.extraction_options(), (false, false));
+    }
+
+    #[test]
+    fn details_can_be_requested_without_summary() {
+        let request = request(
+            r#"{"asins":["B0BHV5TTL6"],"includeSummary":false,"includeDetails":true}"#,
+        );
+        assert_eq!(request.extraction_options(), (false, true));
+    }
+
+    #[test]
+    fn summary_can_be_requested_without_details() {
+        let request = request(
+            r#"{"asins":["B0BHV5TTL6"],"includeSummary":true,"includeDetails":false}"#,
+        );
+        assert_eq!(request.extraction_options(), (true, false));
+    }
+
+    #[test]
+    fn keeps_legacy_full_mode_compatible() {
+        let request = request(r#"{"asins":["B0BHV5TTL6"],"mode":"full"}"#);
+        assert_eq!(request.extraction_options(), (true, true));
+    }
 }

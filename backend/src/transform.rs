@@ -10,7 +10,7 @@ pub fn flatten_record(record: &Value) -> BTreeMap<String, Value> {
     out
 }
 
-pub fn enrich_derived(row: &mut BTreeMap<String, Value>) {
+pub fn enrich_derived(row: &mut BTreeMap<String, Value>, amazon_base_url: &str) {
     if let Some(image) = row.get("image").and_then(|v| v.as_str()) {
         row.insert(
             "image_large".to_string(),
@@ -20,7 +20,10 @@ pub fn enrich_derived(row: &mut BTreeMap<String, Value>) {
     if let Some(asin) = row.get("asin").and_then(|v| v.as_str()) {
         row.insert(
             "url".to_string(),
-            string_value(format!("https://www.amazon.com/dp/{asin}")),
+            string_value(format!(
+                "{}/dp/{asin}",
+                amazon_base_url.trim_end_matches('/')
+            )),
         );
     }
     if let Some(available) = row.get("available").and_then(number_to_f64) {

@@ -12,6 +12,7 @@ import CompetitorProfilePanel from './CompetitorProfilePanel.vue'
 
 const props = defineProps<{
   products: ProductRow[]
+  marketplace: string
 }>()
 
 const query = ref('')
@@ -120,7 +121,7 @@ function rowKey(product: ProductRow, index: number): string {
 }
 
 function exportHtml() {
-  exportCompetitorTableHtml(filteredProducts.value, visibleColumns.value)
+  exportCompetitorTableHtml(filteredProducts.value, visibleColumns.value, props.marketplace)
 }
 
 </script>
@@ -235,7 +236,12 @@ function exportHtml() {
         </table>
       </div>
 
-      <CompetitorProfilePanel :profile="selectedProfile" :baseline="baselineProfile" :metric="activeMetric" />
+      <CompetitorProfilePanel
+        :profile="selectedProfile"
+        :baseline="baselineProfile"
+        :metric="activeMetric"
+        :marketplace="marketplace"
+      />
     </div>
   </section>
 </template>

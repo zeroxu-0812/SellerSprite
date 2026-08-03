@@ -14,10 +14,12 @@ use tokio::time::{sleep, Duration};
 use crate::{
     amazon,
     api::AppState,
+    config::AppConfig,
     error::{AppError, Result},
-    models::{Failure, ProductDetail, RunMode, RunRequest, RunResponse},
+    models::{Failure, ProductDetail, RunRequest, RunResponse},
     overview::derive_market_overview,
     sellersprite,
+    summary::enrich_product_summary,
     transform::{clean_row, enrich_derived, flatten_record},
 };
 
@@ -26,23 +28,33 @@ pub async fn process_asins_with_progress(
     request: RunRequest,
     job_id: String,
 ) -> Result<RunResponse> {
-    let asins = normalize_asins(request.asins);
+    let (include_summary, include_details) = request.extraction_options();
+    let RunRequest {
+        asins,
+        marketplace,
+        include_summary: _,
+        include_details: _,
+        mode: _,
+        workers,
+    } = request;
+    let asins = normalize_asins(asins);
     if asins.is_empty() {
         return Err(AppError::BadRequest("no valid ASINs".to_string()));
     }
+    let runtime_config = config_for_marketplace(&state.config, marketplace.as_deref())?;
     state.jobs.set_total(&job_id, asins.len()).await;
-    state.jobs.running(&job_id, "卖家精灵").await;
-    let workers = request
-        .workers
-        .unwrap_or(state.config.concurrency.workers)
-        .max(1);
-    let mut lookup =
-        sellersprite::lookup_asins(&state.client, &state.config, &state.token_manager, &asins)
-            .await?;
-    let completed = if request.mode == RunMode::Fast { asins.len() } else { 0 };
     state
         .jobs
-        .advance(&job_id, completed, None, "卖家精灵")
+        .running(&job_id, format!("卖家精灵 {}", runtime_config.station))
+        .await;
+    let workers = workers.unwrap_or(runtime_config.concurrency.workers).max(1);
+    let mut lookup =
+        sellersprite::lookup_asins(&state.client, &runtime_config, &state.token_manager, &asins)
+            .await?;
+    let completed = if include_details { 0 } else { asins.len() };
+    state
+        .jobs
+        .advance(&job_id, completed, None, format!("卖家精灵 {}", runtime_config.station))
         .await;
     let mut failures = Vec::new();
     failures.append(&mut lookup.failures);
@@ -58,8 +70,15 @@ pub async fn process_asins_with_progress(
         })
         .collect();
 
-    if request.mode == RunMode::Full {
-        let details = fetch_details(state, by_asin.keys().cloned().collect(), workers, &job_id).await;
+    if include_details {
+        let details = fetch_details(
+            state,
+            &runtime_config,
+            by_asin.keys().cloned().collect(),
+            workers,
+            &job_id,
+        )
+        .await;
         for (asin, result) in details {
             match result {
                 Ok(detail) => apply_detail(by_asin.get_mut(&asin), detail),
@@ -76,7 +95,19 @@ pub async fn process_asins_with_progress(
         .values()
         .map(flatten_record)
         .map(|mut row| {
-            enrich_derived(&mut row);
+            enrich_derived(&mut row, &runtime_config.amazon.base_url);
+            if include_summary {
+                enrich_product_summary(&mut row);
+            }
+            apply_extraction_visibility(&mut row, include_summary, include_details);
+            row.insert(
+                "marketplace_station".to_string(),
+                Value::String(runtime_config.station.clone()),
+            );
+            row.insert(
+                "amazon_base_url".to_string(),
+                Value::String(runtime_config.amazon.base_url.clone()),
+            );
             clean_row(row)
         })
         .collect::<Vec<_>>();
@@ -99,6 +130,57 @@ pub async fn process_asins_with_progress(
     Ok(response)
 }
 
+fn apply_extraction_visibility(
+    row: &mut BTreeMap<String, Value>,
+    include_summary: bool,
+    include_details: bool,
+) {
+    if !include_summary {
+        for key in [
+            "product_identity",
+            "target_user",
+            "primary_scene",
+            "overall_summary",
+        ] {
+            row.remove(key);
+        }
+    }
+    if !include_details {
+        row.remove("about");
+    }
+}
+
+fn config_for_marketplace(base: &AppConfig, marketplace: Option<&str>) -> Result<AppConfig> {
+    let Some(raw) = marketplace.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(base.clone());
+    };
+    let key = raw
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|ch| !matches!(ch, '_' | '-' | ' ' | '.'))
+        .collect::<String>();
+    let (station, amazon_base_url) = match key.as_str() {
+        "com" | "us" | "usa" | "unitedstates" => ("US", "https://www.amazon.com"),
+        "it" | "italy" | "italia" => ("IT", "https://www.amazon.it"),
+        "uk" | "gb" | "greatbritain" | "unitedkingdom" | "couk" => {
+            ("UK", "https://www.amazon.co.uk")
+        }
+        "fr" | "france" => ("FR", "https://www.amazon.fr"),
+        "es" | "spain" | "espana" => ("ES", "https://www.amazon.es"),
+        "de" | "germany" | "deutschland" => ("DE", "https://www.amazon.de"),
+        "jp" | "japan" | "cojp" => ("JP", "https://www.amazon.co.jp"),
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "unsupported marketplace: {raw}. supported: com, it, uk, fr, es, de, jp"
+            )))
+        }
+    };
+    let mut config = base.clone();
+    config.station = station.to_string();
+    config.amazon.base_url = amazon_base_url.to_string();
+    Ok(config)
+}
+
 fn normalize_asins(asins: Vec<String>) -> Vec<String> {
     let re = regex::Regex::new(r#"[A-Z0-9]{10}"#).expect("valid regex");
     let mut seen = std::collections::BTreeSet::new();
@@ -116,6 +198,7 @@ fn normalize_asins(asins: Vec<String>) -> Vec<String> {
 
 async fn fetch_details(
     state: &AppState,
+    config: &AppConfig,
     asins: Vec<String>,
     workers: usize,
     job_id: &str,
@@ -126,8 +209,8 @@ async fn fetch_details(
         .map(|(index, asin)| {
             let completed = completed.clone();
             async move {
-            sleep(request_delay(&state.config, index)).await;
-            let result = amazon::fetch_product_detail(&state.client, &asin, &state.config)
+            sleep(request_delay(config, index)).await;
+            let result = amazon::fetch_product_detail(&state.client, &asin, config)
                 .await
                 .map_err(|err| err.to_string());
             let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
@@ -213,4 +296,43 @@ async fn write_outputs(
     .await
     .map_err(|err| AppError::Anyhow(err.into()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn optional_row() -> BTreeMap<String, Value> {
+        BTreeMap::from([
+            ("product_identity".to_string(), json!("定位")),
+            ("target_user".to_string(), json!("用户")),
+            ("primary_scene".to_string(), json!("场景")),
+            ("overall_summary".to_string(), json!("总结")),
+            ("about".to_string(), json!(["一点", "二点"])),
+        ])
+    }
+
+    #[test]
+    fn fast_mode_hides_both_optional_sections() {
+        let mut row = optional_row();
+        apply_extraction_visibility(&mut row, false, false);
+        assert!(!row.contains_key("product_identity"));
+        assert!(!row.contains_key("about"));
+    }
+
+    #[test]
+    fn summary_mode_hides_only_five_point_details() {
+        let mut row = optional_row();
+        apply_extraction_visibility(&mut row, true, false);
+        assert!(row.contains_key("product_identity"));
+        assert!(!row.contains_key("about"));
+    }
+
+    #[test]
+    fn full_mode_keeps_both_optional_sections() {
+        let mut row = optional_row();
+        apply_extraction_visibility(&mut row, true, true);
+        assert!(row.contains_key("overall_summary"));
+        assert!(row.contains_key("about"));
+    }
 }

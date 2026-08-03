@@ -1,9 +1,20 @@
 import type { ProductRow } from '../types'
 import type { ProductColumn } from './columns'
-import { safe } from './formatters'
 
-export function exportCompetitorTableHtml(products: ProductRow[], columns: ProductColumn[]) {
+const summaryFields = [
+  { key: 'product_identity', label: '产品定位：' },
+  { key: 'target_user', label: '目标用户：' },
+  { key: 'primary_scene', label: '主要场景：' },
+  { key: 'overall_summary', label: '整体总结：' },
+] as const
+
+export function exportCompetitorTableHtml(products: ProductRow[], columns: ProductColumn[], marketplace = '') {
   const payload = {
+    marketplace,
+    summaryFields,
+    hasSummary: products.some((product) =>
+      summaryFields.some((field) => String(product[field.key] ?? '').trim()),
+    ),
     columns: columns.map((column) => ({
       key: column.key,
       label: column.label,
@@ -19,6 +30,7 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
         .join(' ')
         .toLowerCase(),
       sort: Object.fromEntries(columns.map((column) => [column.key, sortValue(product[column.sortKey || column.key], column.sortType)])),
+      summary: Object.fromEntries(summaryFields.map((field) => [field.key, String(product[field.key] ?? '')])),
       cells: Object.fromEntries(
         columns.map((column) => [
           column.key,
@@ -85,6 +97,11 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
   .bar .tip{display:none}
   #trendTip{position:fixed;left:0;top:0;z-index:9999;max-width:min(220px,calc(100vw - 20px));padding:4px 7px;transform:translate(-50%,-100%);color:#fff;background:#232f3e;border-radius:4px;font-size:10px;line-height:1.3;opacity:0;pointer-events:none;white-space:nowrap;box-shadow:0 6px 18px rgba(16,24,40,.22)}
   .empty{color:#c8ccd2}.hidden{display:none}.table-empty{padding:30px!important;color:#667085;text-align:center!important}
+  .summary-separator td{background:#edf6ff;border-bottom:1px solid #cbddec}
+  .summary-separator .field-name{color:#14527b;background:#dceeff}
+  .summary-row td{background:#fbfdff}
+  .summary-row .field-name{color:#45657c;background:#f1f8ff;font-weight:800}
+  .summary-value{line-height:1.55;white-space:normal;overflow-wrap:anywhere}
 </style>
 </head>
 <body>
@@ -154,15 +171,29 @@ function renderBody(cols, rows) {
     tbody.innerHTML = '<tr><td class="table-empty" colspan="2">没有匹配竞手。调整搜索或显示产品。</td></tr>';
     return;
   }
-  if (!cols.length) {
-    tbody.innerHTML = '<tr><td class="table-empty" colspan="' + (rows.length + 1) + '">没有显示字段。打开至少一个字段。</td></tr>';
-    return;
-  }
-  tbody.innerHTML = cols.map(col => '<tr class="' + (col.key === 'img' ? 'pinned-row' : '') + '">' + fieldCell(col) + rows.map(row => {
+  const tableRows = cols.map(col => '<tr class="' + (col.key === 'img' ? 'pinned-row' : '') + '">' + fieldCell(col) + rows.map(row => {
     const cell = row.cells[col.key] || { html: '', className: '' };
     const align = cell.align ? ' align-' + cell.align : '';
     return '<td class="' + (cell.className || '') + align + '">' + cell.html + '</td>';
   }).join('') + '</tr>').join('');
+  const summaryRows = DATA.hasSummary ? '<tr class="summary-separator"><td class="field-name">商品信息摘要</td>' + rows.map(() => '<td>四项自动生成信息</td>').join('') + '</tr>' + DATA.summaryFields.map(field => {
+    return '<tr class="summary-row"><td class="field-name">' + field.label + '</td>' + rows.map(row => {
+      const value = row.summary && row.summary[field.key] ? row.summary[field.key] : '—';
+      return '<td class="summary-value">' + escapeHtml(value) + '</td>';
+    }).join('') + '</tr>';
+  }).join('') : '';
+  const emptyMessage = DATA.hasSummary ? '未选择普通字段，以下为商品信息摘要。' : '未选择显示字段。';
+  tbody.innerHTML = (tableRows || '<tr><td class="table-empty" colspan="' + (rows.length + 1) + '">' + emptyMessage + '</td></tr>') + summaryRows;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
 }
 
 function fieldCell(col) {

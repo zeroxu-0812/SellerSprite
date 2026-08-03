@@ -11,3 +11,5 @@ test_out.json
 backend/target/
 frontend/node_modules/
 frontend/dist/
+.idea/
+.DS_Store

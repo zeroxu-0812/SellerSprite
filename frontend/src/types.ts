@@ -1,8 +1,10 @@
-export type RunMode = 'fast' | 'full'
+export type MarketplaceCode = 'com' | 'it' | 'uk' | 'fr' | 'es' | 'de' | 'jp'
 
 export interface RunRequest {
   asins: string[]
-  mode: RunMode
+  marketplace: MarketplaceCode
+  includeSummary: boolean
+  includeDetails: boolean
   workers?: number
 }
 

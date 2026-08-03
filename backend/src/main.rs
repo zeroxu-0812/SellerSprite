@@ -9,6 +9,7 @@ mod pipeline;
 mod progress;
 mod sellersprite;
 mod signing;
+mod summary;
 mod transform;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};

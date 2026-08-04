@@ -8,6 +8,11 @@ export interface RunRequest {
   workers?: number
 }
 
+export interface AdminLoginResponse {
+  token: string
+  expiresInSeconds: number
+}
+
 export interface Failure {
   asin: string
   stage: string
@@ -47,4 +52,21 @@ export interface RunProgress {
   stage: string
   result: RunResponse | null
   error: string | null
+}
+
+export interface MarketplaceUsage {
+  count: number
+  last_searched_at: string | null
+}
+
+export interface SearchUsageEvent {
+  marketplace: MarketplaceCode
+  asin_count: number
+  searched_at: string
+}
+
+export interface UsageResponse {
+  total: number
+  marketplaces: Partial<Record<MarketplaceCode, MarketplaceUsage>>
+  recent: SearchUsageEvent[]
 }

@@ -7,6 +7,8 @@ pub enum AppError {
     BadRequest(String),
     #[error("auth expired: {0}")]
     AuthExpired(String),
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
     #[error("upstream error: {0}")]
     Upstream(String),
     #[error(transparent)]
@@ -18,6 +20,7 @@ impl IntoResponse for AppError {
         let status = match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::AuthExpired(_) => StatusCode::UNAUTHORIZED,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
             AppError::Anyhow(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { MarketplaceCode } from '../types'
+import { marketplaces } from '../utils/marketplaces'
 
 const props = defineProps<{
   rawInput: string
@@ -22,20 +23,6 @@ const emit = defineEmits<{
   run: []
 }>()
 
-const marketplaces: Array<{
-  code: MarketplaceCode
-  label: string
-  domain: string
-}> = [
-  { code: 'com', label: '美国', domain: 'amazon.com' },
-  { code: 'de', label: '德国', domain: 'amazon.de' },
-  { code: 'uk', label: '英国', domain: 'amazon.co.uk' },
-  { code: 'jp', label: '日本', domain: 'amazon.co.jp' },
-  { code: 'fr', label: '法国', domain: 'amazon.fr' },
-  { code: 'es', label: '西班牙', domain: 'amazon.es' },
-  { code: 'it', label: '意大利', domain: 'amazon.it' },
-]
-
 const modeLabel = computed(() => {
   if (props.includeSummary && props.includeDetails) return '完整抓取'
   if (props.includeDetails) return '五点增强'
@@ -56,9 +43,7 @@ function toggleDetails(checked: boolean) {
   <section class="control-panel" aria-label="运行控制">
     <header class="control-panel-header">
       <div>
-        <div class="eyebrow">Run control</div>
         <h2>分析设置</h2>
-        <p>输入 ASIN，选择目标站点与抓取模式后开始分析。</p>
       </div>
       <div class="run-summary">
         <span>已识别</span>
@@ -69,7 +54,7 @@ function toggleDetails(checked: boolean) {
 
     <div class="control-panel-grid">
       <div class="panel-section">
-        <div class="section-label">Input</div>
+        <div class="section-label">ASIN 列表</div>
         <label class="field">
           <span>ASIN 列表</span>
           <textarea
@@ -81,7 +66,7 @@ function toggleDetails(checked: boolean) {
       </div>
 
       <div class="panel-section">
-        <div class="section-label">Marketplace</div>
+        <div class="section-label">目标站点</div>
         <div class="marketplace-grid">
           <button
             v-for="item in marketplaces"
@@ -92,15 +77,14 @@ function toggleDetails(checked: boolean) {
             :aria-pressed="marketplace === item.code"
             @click="emit('update:marketplace', item.code)"
           >
-            <b>{{ item.label }}</b>
-            <span>{{ item.domain }}</span>
+            <b><span>{{ item.flag }}</span>{{ item.label }}</b>
           </button>
         </div>
       </div>
 
       <div class="panel-section run-settings">
         <div class="mode-heading">
-          <div class="section-label">Data options</div>
+          <div class="section-label">数据选项</div>
           <strong>{{ modeLabel }}</strong>
         </div>
 

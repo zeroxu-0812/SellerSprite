@@ -53,16 +53,16 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#eef2f6;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px}
-  header{padding:14px 18px;color:#fff;background:#131921;border-bottom:3px solid #ff9900}
+  header{padding:14px 18px;color:#fff;background:#111d2b;border-bottom:3px solid #08a5de}
   h1{margin:0;font-size:18px}
   .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 14px 0;padding:12px;background:#fff;border:1px solid #d9e1ea;border-radius:8px}
   .toolbar-left,.toolbar-right,.toolbar-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .toolbar-stack{display:grid;gap:8px;margin:14px 14px 0;padding:12px;background:#fff;border:1px solid #d9e1ea;border-radius:8px}
   .search{width:min(360px,80vw);height:34px;padding:0 11px;border:1px solid #cbd5e1;border-radius:7px;outline:none}
-  .search:focus{border-color:#ff9900;box-shadow:0 0 0 3px rgba(255,153,0,.16)}
+  .search:focus{border-color:#08a5de;box-shadow:0 0 0 3px rgba(8,165,222,.16)}
   .count{color:#667085;font-size:12px}
   .col-toggle{height:30px;padding:0 9px;color:#344054;background:#fff;border:1px solid #d9e1ea;border-radius:7px;font-size:12px;cursor:pointer}
-  .col-toggle.active{color:#9a4f00;background:#fff4dc;border-color:#ff9900;font-weight:700}
+  .col-toggle.active{color:#075f99;background:#e7f6fd;border-color:#08a5de;font-weight:700}
   .label{color:#667085;font-size:12px;font-weight:800}
   select{height:32px;color:#17202a;background:#fff;border:1px solid #d9e1ea;border-radius:7px}
   .table-wrap{margin:14px;overflow:auto;background:#fff;border:1px solid #d9e1ea;border-radius:8px}
@@ -74,12 +74,12 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
   tr.pinned-row td.field-name{left:0;z-index:8;color:#fff;background:#1b2735}
   .field-cell{display:flex;align-items:center;justify-content:space-between;gap:8px}
   .sort-chip{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:22px;padding:0 6px;color:#dbeafe;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);border-radius:5px;font-size:11px;font-weight:900;cursor:pointer}
-  .sort-chip:hover,.sort-chip.active{color:#1b2735;background:#ff9900;border-color:#ff9900}
+  .sort-chip:hover,.sort-chip.active{color:#fff;background:#0878bd;border-color:#0878bd}
   a{color:#007185;text-decoration:none;font-weight:700}
   .img-cell img{display:block;width:92px;height:92px;object-fit:contain;background:#fafafa;border:1px solid #eceef1;border-radius:7px}
   .image-link{position:relative;display:inline-block}
-  .image-badge{position:absolute;top:6px;left:6px;height:22px;padding:0 7px;color:#9a4f00;background:rgba(255,244,220,.94);border:1px solid #ff9900;border-radius:5px;box-shadow:0 1px 2px rgba(16,24,40,.16);font-size:12px;font-weight:900;line-height:20px}
-  .image-badge:before{content:"";position:absolute;inset:-4px;border:2px solid rgba(255,153,0,.78);border-radius:8px;pointer-events:none}
+  .image-badge{position:absolute;top:6px;left:6px;height:22px;padding:0 7px;color:#075f99;background:rgba(231,246,253,.94);border:1px solid #08a5de;border-radius:5px;box-shadow:0 1px 2px rgba(16,24,40,.16);font-size:12px;font-weight:900;line-height:20px}
+  .image-badge:before{content:"";position:absolute;inset:-4px;border:2px solid rgba(8,165,222,.72);border-radius:8px;pointer-events:none}
   .title-cell{min-width:220px;max-width:300px}
   .asin-line{color:#5b6470}.asin-line b{color:#1c2230}.parent-line{margin-top:2px;color:#98a2b3;font-size:12px}
   .lbl{color:#98a2b3}.badge-list{display:flex;max-width:140px;flex-wrap:wrap;gap:4px}
@@ -92,7 +92,7 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
   .parent-u{color:#0a7ea4;font-weight:800}.child-u{color:#4a5260}.amount{color:#067647}.sub{color:#067647;font-size:12px}.sub.neg{color:#b42318}
   .trend-cell{width:260px;min-width:220px;max-width:280px}.trend-cell>div{width:100%;min-width:0;max-width:100%}.spark-row{width:100%;min-width:0;max-width:100%;margin-bottom:8px}.spark-label{margin-bottom:2px;color:#667085;font-size:11px;font-weight:800}.spark-sum{margin-left:4px;color:#98a2b3;font-weight:400}
   .spark{position:relative;display:flex;align-items:flex-end;width:100%;min-width:0;max-width:100%;height:54px;gap:4px;padding-top:20px;border-bottom:1px solid #e5e7ea}
-  .bar{position:relative;min-width:0;flex:1 1 0;background:linear-gradient(180deg,#ff9900 0%,#ffb84d 100%);border-radius:3px 3px 0 0}.bar.parent{background:linear-gradient(180deg,#37475a 0%,#5a7088 100%)}.bar.zero{background:#e8eaed}
+  .bar{position:relative;min-width:0;flex:1 1 0;background:#08a5de;border-radius:3px 3px 0 0}.bar.parent{background:#5a7088}.bar.zero{background:#e8eaed}
   .bar .val{display:none}
   .bar .tip{display:none}
   #trendTip{position:fixed;left:0;top:0;z-index:9999;max-width:min(220px,calc(100vw - 20px));padding:4px 7px;transform:translate(-50%,-100%);color:#fff;background:#232f3e;border-radius:4px;font-size:10px;line-height:1.3;opacity:0;pointer-events:none;white-space:nowrap;box-shadow:0 6px 18px rgba(16,24,40,.22)}

@@ -3,6 +3,19 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct AdminLoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AdminLoginResponse {
+    pub token: String,
+    #[serde(rename = "expiresInSeconds")]
+    pub expires_in_seconds: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunRequest {
     pub asins: Vec<String>,

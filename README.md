@@ -31,6 +31,16 @@ python3 refresh_tokens.py
 
 生成并缓存运行期鉴权信息。缓存文件 `.token_cache.json`、`.client_tokens.json` 不应提交。
 
+工作台管理员权限需要额外配置：
+
+```bash
+SELLERSPRITE_ADMIN_USERNAME=admin
+SELLERSPRITE_ADMIN_PASSWORD_SHA256=<管理员密码的 SHA-256>
+SELLERSPRITE_ADMIN_SESSION_TTL_SECONDS=28800
+```
+
+也可以使用 `SELLERSPRITE_ADMIN_PASSWORD` 填写明文密码；同时配置时优先使用 SHA-256。管理员登录令牌只保存在当前浏览器会话中。
+
 ## 本地开发
 
 后端：
@@ -96,8 +106,19 @@ curl http://127.0.0.1:8787/api/health
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `GET` | `/api/health` | 健康检查 |
+| `POST` | `/api/auth/login` | 管理员登录，返回工作台会话令牌 |
 | `POST` | `/api/jobs` | 创建分析任务，返回 `job_id` 和初始进度 |
 | `GET` | `/api/jobs/:job_id` | 查询任务进度，完成时返回结果 |
+| `GET` | `/api/usage` | 查询各国家站点累计搜索次数和最近任务，需要 `Authorization: Bearer <token>` |
+
+管理员登录请求：
+
+```json
+{
+  "username": "admin",
+  "password": "管理员密码"
+}
+```
 
 任务请求示例：
 
@@ -146,7 +167,10 @@ curl http://127.0.0.1:8787/api/health
 output/products.json
 output/market_overview.json
 output/failures.json
+output/search_usage.json
 ```
+
+`search_usage.json` 按国家站点累计任务创建次数，并保留最近搜索记录。该文件由后端管理，抓取结果刷新时不会被清理。
 
 前端的“导出 HTML”会在浏览器侧生成交互式报告，不依赖服务器文件。
 

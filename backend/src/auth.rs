@@ -1,12 +1,14 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
+use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachePayload {
@@ -17,6 +19,92 @@ struct CachePayload {
 pub struct TokenManager {
     cache_file: PathBuf,
     lock: Mutex<()>,
+}
+
+pub struct AdminAuth {
+    username: String,
+    password_sha256: String,
+    session_ttl: Duration,
+    sessions: Mutex<HashMap<String, Instant>>,
+}
+
+pub struct AdminSession {
+    pub token: String,
+    pub expires_in_seconds: u64,
+}
+
+impl AdminAuth {
+    pub fn from_env() -> anyhow::Result<Self> {
+        let username = std::env::var("SELLERSPRITE_ADMIN_USERNAME")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .context("missing SELLERSPRITE_ADMIN_USERNAME")?;
+        let password_sha256 = configured_password_sha256()?;
+        let ttl_seconds = std::env::var("SELLERSPRITE_ADMIN_SESSION_TTL_SECONDS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(8 * 60 * 60);
+
+        Ok(Self {
+            username,
+            password_sha256,
+            session_ttl: Duration::from_secs(ttl_seconds),
+            sessions: Mutex::new(HashMap::new()),
+        })
+    }
+
+    pub async fn login(&self, username: &str, password: &str) -> Option<AdminSession> {
+        if username != self.username || sha256_hex(password) != self.password_sha256 {
+            return None;
+        }
+
+        let now = Instant::now();
+        let expires_at = now + self.session_ttl;
+        let token = Uuid::new_v4().simple().to_string();
+        let mut sessions = self.sessions.lock().await;
+        sessions.retain(|_, expires| *expires > now);
+        sessions.insert(token.clone(), expires_at);
+
+        Some(AdminSession {
+            token,
+            expires_in_seconds: self.session_ttl.as_secs(),
+        })
+    }
+
+    pub async fn authorize(&self, authorization: Option<&str>) -> bool {
+        let Some(token) = authorization
+            .and_then(|value| value.strip_prefix("Bearer "))
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        else {
+            return false;
+        };
+        let now = Instant::now();
+        let mut sessions = self.sessions.lock().await;
+        sessions.retain(|_, expires| *expires > now);
+        sessions.get(token).is_some_and(|expires| *expires > now)
+    }
+}
+
+fn configured_password_sha256() -> anyhow::Result<String> {
+    if let Some(value) = std::env::var("SELLERSPRITE_ADMIN_PASSWORD_SHA256")
+        .ok()
+        .filter(|value| value.trim().len() == 64)
+    {
+        return Ok(value.trim().to_ascii_lowercase());
+    }
+
+    let password = std::env::var("SELLERSPRITE_ADMIN_PASSWORD")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .context("missing SELLERSPRITE_ADMIN_PASSWORD_SHA256 or SELLERSPRITE_ADMIN_PASSWORD")?;
+    Ok(sha256_hex(&password))
+}
+
+fn sha256_hex(value: &str) -> String {
+    let digest = Sha256::digest(value.as_bytes());
+    format!("{digest:x}")
 }
 
 impl TokenManager {

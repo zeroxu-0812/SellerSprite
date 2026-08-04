@@ -151,34 +151,48 @@ fn apply_extraction_visibility(
 }
 
 fn config_for_marketplace(base: &AppConfig, marketplace: Option<&str>) -> Result<AppConfig> {
-    let Some(raw) = marketplace.map(str::trim).filter(|value| !value.is_empty()) else {
-        return Ok(base.clone());
+    let code = marketplace_code(marketplace)?;
+    let (station, amazon_base_url) = match code.as_str() {
+        "com" => ("US", "https://www.amazon.com"),
+        "it" => ("IT", "https://www.amazon.it"),
+        "uk" => ("UK", "https://www.amazon.co.uk"),
+        "fr" => ("FR", "https://www.amazon.fr"),
+        "es" => ("ES", "https://www.amazon.es"),
+        "de" => ("DE", "https://www.amazon.de"),
+        "jp" => ("JP", "https://www.amazon.co.jp"),
+        _ => unreachable!("marketplace_code only returns supported codes"),
     };
+    let mut config = base.clone();
+    config.station = station.to_string();
+    config.amazon.base_url = amazon_base_url.to_string();
+    Ok(config)
+}
+
+pub fn marketplace_code(marketplace: Option<&str>) -> Result<String> {
+    let raw = marketplace
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("com");
     let key = raw
         .to_ascii_lowercase()
         .chars()
         .filter(|ch| !matches!(ch, '_' | '-' | ' ' | '.'))
         .collect::<String>();
-    let (station, amazon_base_url) = match key.as_str() {
-        "com" | "us" | "usa" | "unitedstates" => ("US", "https://www.amazon.com"),
-        "it" | "italy" | "italia" => ("IT", "https://www.amazon.it"),
-        "uk" | "gb" | "greatbritain" | "unitedkingdom" | "couk" => {
-            ("UK", "https://www.amazon.co.uk")
-        }
-        "fr" | "france" => ("FR", "https://www.amazon.fr"),
-        "es" | "spain" | "espana" => ("ES", "https://www.amazon.es"),
-        "de" | "germany" | "deutschland" => ("DE", "https://www.amazon.de"),
-        "jp" | "japan" | "cojp" => ("JP", "https://www.amazon.co.jp"),
+    let code = match key.as_str() {
+        "com" | "us" | "usa" | "unitedstates" => "com",
+        "it" | "italy" | "italia" => "it",
+        "uk" | "gb" | "greatbritain" | "unitedkingdom" | "couk" => "uk",
+        "fr" | "france" => "fr",
+        "es" | "spain" | "espana" => "es",
+        "de" | "germany" | "deutschland" => "de",
+        "jp" | "japan" | "cojp" => "jp",
         _ => {
             return Err(AppError::BadRequest(format!(
                 "unsupported marketplace: {raw}. supported: com, it, uk, fr, es, de, jp"
             )))
         }
     };
-    let mut config = base.clone();
-    config.station = station.to_string();
-    config.amazon.base_url = amazon_base_url.to_string();
-    Ok(config)
+    Ok(code.to_string())
 }
 
 fn normalize_asins(asins: Vec<String>) -> Vec<String> {
@@ -194,6 +208,10 @@ fn normalize_asins(asins: Vec<String>) -> Vec<String> {
         }
     }
     out
+}
+
+pub fn normalized_asin_count(asins: &[String]) -> usize {
+    normalize_asins(asins.to_vec()).len()
 }
 
 async fn fetch_details(
@@ -273,6 +291,9 @@ async fn write_outputs(
         .map_err(|err| AppError::Anyhow(err.into()))?
     {
         let path = entry.path();
+        if path.file_name().and_then(|name| name.to_str()) == Some("search_usage.json") {
+            continue;
+        }
         if tokio::fs::remove_dir_all(&path).await.is_err() {
             let _ = tokio::fs::remove_file(&path).await;
         }

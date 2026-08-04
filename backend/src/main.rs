@@ -11,13 +11,15 @@ mod sellersprite;
 mod signing;
 mod summary;
 mod transform;
+mod usage;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 use api::{app, AppState};
-use auth::TokenManager;
+use auth::{AdminAuth, TokenManager};
 use config::AppConfig;
 use progress::JobStore;
+use usage::UsageStore;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,11 +34,14 @@ async fn main() -> anyhow::Result<()> {
     load_env(root.join(".env")).await?;
     default_refresh_command();
     let config = AppConfig::load(root.join("config.json")).await?;
+    let usage = UsageStore::load(root.join("output/search_usage.json")).await?;
     let state = Arc::new(AppState {
         root: root.clone(),
         config,
         token_manager: TokenManager::new(root.join(".token_cache.json")),
+        admin_auth: AdminAuth::from_env()?,
         jobs: JobStore::default(),
+        usage,
         client: reqwest::Client::builder()
             .user_agent("SellerSprite-Rust/0.1")
             .build()?,

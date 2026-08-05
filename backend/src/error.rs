@@ -5,6 +5,8 @@ use serde_json::json;
 pub enum AppError {
     #[error("bad request: {0}")]
     BadRequest(String),
+    #[error("service busy: {0}")]
+    Busy(String),
     #[error("auth expired: {0}")]
     AuthExpired(String),
     #[error("unauthorized: {0}")]
@@ -19,6 +21,7 @@ impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let status = match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::Busy(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::AuthExpired(_) => StatusCode::UNAUTHORIZED,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,

@@ -15,6 +15,8 @@ mod usage;
 
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
+use tokio::sync::Semaphore;
+
 use api::{app, AppState};
 use auth::{AdminAuth, TokenManager};
 use config::AppConfig;
@@ -35,6 +37,17 @@ async fn main() -> anyhow::Result<()> {
     default_refresh_command();
     let config = AppConfig::load(root.join("config.json")).await?;
     let usage = UsageStore::load(root.join("output/search_usage.json")).await?;
+    let max_active_jobs = env_usize("SELLERSPRITE_MAX_ACTIVE_JOBS", 2).clamp(1, 8);
+    let max_job_records = env_usize("SELLERSPRITE_MAX_JOB_RECORDS", 500).clamp(10, 5_000);
+    let max_asins = env_usize("SELLERSPRITE_MAX_ASINS", 100).clamp(1, 1_000);
+    let max_workers = env_usize("SELLERSPRITE_MAX_DETAIL_WORKERS", 2).clamp(1, 8);
+    tracing::info!(
+        max_active_jobs,
+        max_job_records,
+        max_asins,
+        max_workers,
+        "concurrency limits configured"
+    );
     let state = Arc::new(AppState {
         root: root.clone(),
         config,
@@ -45,6 +58,10 @@ async fn main() -> anyhow::Result<()> {
         client: reqwest::Client::builder()
             .user_agent("SellerSprite-Rust/0.1")
             .build()?,
+        job_slots: Arc::new(Semaphore::new(max_active_jobs)),
+        max_job_records,
+        max_asins,
+        max_workers,
     });
 
     let addr: SocketAddr = std::env::var("SELLERSPRITE_BIND")
@@ -54,6 +71,13 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("backend listening on http://{addr}");
     axum::serve(listener, app(state)).await?;
     Ok(())
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(default)
 }
 
 async fn load_env(path: PathBuf) -> anyhow::Result<()> {

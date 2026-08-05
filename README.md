@@ -151,6 +151,9 @@ curl http://127.0.0.1:8787/api/health
 - Amazon 详情页补抓受 `workers` 控制，并在请求前加入延迟。
 - 卖家精灵请求有超时、重试、backoff。
 - auth 过期会自动刷新 token 并重试。
+- 后端使用全局任务信号量控制同时运行的抓取任务，超出的任务保持排队。
+- 每个任务强制使用独立的输出目录，避免并发任务互相覆盖结果。
+- 服务端会限制单任务 ASIN 数量和 Amazon 详情页并发，不能通过直接调用 API 绕过。
 - 前端显示真实任务进度，不使用假进度条。
 
 生产建议：
@@ -161,16 +164,27 @@ curl http://127.0.0.1:8787/api/health
 
 ## 输出
 
-每次运行会写入：
+每次运行会写入独立目录：
 
 ```text
-output/products.json
-output/market_overview.json
-output/failures.json
+output/jobs/{job_id}/products.json
+output/jobs/{job_id}/market_overview.json
+output/jobs/{job_id}/failures.json
 output/search_usage.json
 ```
 
-`search_usage.json` 按国家站点累计任务创建次数，并保留最近搜索记录。该文件由后端管理，抓取结果刷新时不会被清理。
+`search_usage.json` 按国家站点累计任务创建次数，并保留最近搜索记录。该文件由后端管理，抓取结果刷新时不会被清理。达到任务记录上限时，后端只清理已完成或失败的旧任务及其对应输出，不会删除运行中的任务。
+
+小范围单实例部署的并发保护参数通过 `.env` 配置：
+
+```env
+SELLERSPRITE_MAX_ACTIVE_JOBS=2
+SELLERSPRITE_MAX_JOB_RECORDS=500
+SELLERSPRITE_MAX_ASINS=100
+SELLERSPRITE_MAX_DETAIL_WORKERS=2
+```
+
+当前方案要求只运行一个后端进程或一个 Docker 容器副本；如果以后扩展为多实例，需要迁移到共享任务队列和共享限流器。
 
 前端的“导出 HTML”会在浏览器侧生成交互式报告，不依赖服务器文件。
 

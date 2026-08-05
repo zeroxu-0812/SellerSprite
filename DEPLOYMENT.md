@@ -83,6 +83,17 @@ curl http://127.0.0.1:8787/api/health
 - 大批量或 Amazon 详情页失败较多：`workers=1`
 - 不建议把 `delay_seconds_min/max` 调得过低
 
+`.env` 中还可以配置单实例任务并发保护：
+
+```env
+SELLERSPRITE_MAX_ACTIVE_JOBS=2
+SELLERSPRITE_MAX_JOB_RECORDS=500
+SELLERSPRITE_MAX_ASINS=100
+SELLERSPRITE_MAX_DETAIL_WORKERS=2
+```
+
+这表示最多同时执行 2 个任务，其他任务排队；每个任务最多抓取 100 个 ASIN，详情页并发最多为 2。当前部署保持单个 `sellersprite` 容器副本，不要启动多个后端副本，否则进程内的并发限制不会跨实例共享。
+
 ## 持久化文件
 
 `docker-compose.yml` 默认挂载：
@@ -91,11 +102,13 @@ curl http://127.0.0.1:8787/api/health
 ./output:/app/output
 ```
 
-这里保存最近一次运行的：
+这里按任务保存：
 
-- `products.json`
-- `market_overview.json`
-- `failures.json`
+- `jobs/{job_id}/products.json`
+- `jobs/{job_id}/market_overview.json`
+- `jobs/{job_id}/failures.json`
+
+任务写入使用临时文件完成后原子替换，达到任务记录上限时只清理已完成或失败任务的目录。
 
 token 缓存默认在容器内生成。若需要跨容器重建保留登录缓存，可额外挂载：
 

@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::Utc;
 use serde::Serialize;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 use crate::models::RunResponse;
 
@@ -33,8 +33,31 @@ pub struct JobStore {
 }
 
 impl JobStore {
-    pub async fn create(&self, total: usize) -> RunProgress {
-        let job_id = format!("run-{}", Utc::now().timestamp_millis());
+    pub async fn create(
+        &self,
+        total: usize,
+        max_records: usize,
+    ) -> Option<(RunProgress, Vec<String>)> {
+        let mut jobs = self.inner.lock().await;
+        let mut removed_ids = Vec::new();
+        let max_records = max_records.max(1);
+
+        while jobs.len() >= max_records {
+            let removable = jobs.iter().find_map(|(job_id, progress)| {
+                if matches!(&progress.status, JobStatus::Done | JobStatus::Error) {
+                    Some(job_id.clone())
+                } else {
+                    None
+                }
+            });
+            let Some(job_id) = removable else {
+                return None;
+            };
+            jobs.remove(&job_id);
+            removed_ids.push(job_id);
+        }
+
+        let job_id = format!("run-{}", Uuid::new_v4().simple());
         let progress = RunProgress {
             job_id: job_id.clone(),
             status: JobStatus::Queued,
@@ -45,8 +68,8 @@ impl JobStore {
             result: None,
             error: None,
         };
-        self.inner.lock().await.insert(job_id, progress.clone());
-        progress
+        jobs.insert(job_id, progress.clone());
+        Some((progress, removed_ids))
     }
 
     pub async fn get(&self, job_id: &str) -> Option<RunProgress> {
@@ -102,5 +125,39 @@ impl JobStore {
         if let Some(progress) = self.inner.lock().await.get_mut(job_id) {
             update(progress);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn creates_unique_ids() {
+        let store = JobStore::default();
+        let first = store.create(1, 10).await.unwrap().0;
+        let second = store.create(1, 10).await.unwrap().0;
+
+        assert_ne!(first.job_id, second.job_id);
+    }
+
+    #[tokio::test]
+    async fn prunes_terminal_jobs_before_rejecting_new_work() {
+        let store = JobStore::default();
+        let first = store.create(1, 2).await.unwrap().0;
+        let second = store.create(1, 2).await.unwrap().0;
+        store.fail(&first.job_id, "test failure".to_string()).await;
+
+        let (third, removed) = store.create(1, 2).await.unwrap();
+
+        assert_eq!(removed, vec![first.job_id]);
+        assert_ne!(third.job_id, second.job_id);
+    }
+
+    #[tokio::test]
+    async fn rejects_when_all_job_slots_are_active_or_queued() {
+        let store = JobStore::default();
+        assert!(store.create(1, 1).await.is_some());
+        assert!(store.create(1, 1).await.is_none());
     }
 }

@@ -10,6 +10,7 @@ use std::{
 use futures::{stream, StreamExt};
 use serde_json::{json, Value};
 use tokio::time::{sleep, Duration};
+use uuid::Uuid;
 
 use crate::{
     amazon,
@@ -47,7 +48,11 @@ pub async fn process_asins_with_progress(
         .jobs
         .running(&job_id, format!("卖家精灵 {}", runtime_config.station))
         .await;
-    let workers = workers.unwrap_or(runtime_config.concurrency.workers).max(1);
+    let workers = bounded_workers(
+        workers,
+        runtime_config.concurrency.workers,
+        state.max_workers,
+    );
     let mut lookup =
         sellersprite::lookup_asins(&state.client, &runtime_config, &state.token_manager, &asins)
             .await?;
@@ -117,7 +122,7 @@ pub async fn process_asins_with_progress(
             .cmp(&b.get("asin").and_then(|v| v.as_str()))
     });
     let overview = derive_market_overview(&rows);
-    let out_dir = state.root.join("output");
+    let out_dir = state.root.join("output").join("jobs").join(&job_id);
     write_outputs(&out_dir, &rows, &overview, &failures).await?;
 
     let response = RunResponse {
@@ -128,6 +133,13 @@ pub async fn process_asins_with_progress(
     };
     state.jobs.advance(&job_id, asins.len(), None, "完成").await;
     Ok(response)
+}
+
+fn bounded_workers(requested: Option<usize>, configured: usize, maximum: usize) -> usize {
+    requested
+        .unwrap_or(configured)
+        .max(1)
+        .min(maximum.max(1))
 }
 
 fn apply_extraction_visibility(
@@ -282,40 +294,27 @@ async fn write_outputs(
     tokio::fs::create_dir_all(out_dir)
         .await
         .map_err(|err| AppError::Anyhow(err.into()))?;
-    let mut entries = tokio::fs::read_dir(out_dir)
-        .await
-        .map_err(|err| AppError::Anyhow(err.into()))?;
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .map_err(|err| AppError::Anyhow(err.into()))?
-    {
-        let path = entry.path();
-        if path.file_name().and_then(|name| name.to_str()) == Some("search_usage.json") {
-            continue;
-        }
-        if tokio::fs::remove_dir_all(&path).await.is_err() {
-            let _ = tokio::fs::remove_file(&path).await;
-        }
+    write_json_atomic(&out_dir.join("products.json"), products).await?;
+    write_json_atomic(&out_dir.join("market_overview.json"), overview).await?;
+    write_json_atomic(&out_dir.join("failures.json"), failures).await?;
+    Ok(())
+}
+
+async fn write_json_atomic<T: serde::Serialize + ?Sized>(path: &Path, value: &T) -> Result<()> {
+    let temporary = path.with_file_name(format!(
+        ".{}.{}.tmp",
+        path.file_name().and_then(|name| name.to_str()).unwrap_or("output"),
+        Uuid::new_v4().simple()
+    ));
+    let bytes = serde_json::to_vec_pretty(value).map_err(anyhow::Error::from)?;
+    if let Err(err) = tokio::fs::write(&temporary, bytes).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(AppError::Anyhow(err.into()));
     }
-    tokio::fs::write(
-        out_dir.join("products.json"),
-        serde_json::to_vec_pretty(products).map_err(anyhow::Error::from)?,
-    )
-    .await
-    .map_err(|err| AppError::Anyhow(err.into()))?;
-    tokio::fs::write(
-        out_dir.join("market_overview.json"),
-        serde_json::to_vec_pretty(overview).map_err(anyhow::Error::from)?,
-    )
-    .await
-    .map_err(|err| AppError::Anyhow(err.into()))?;
-    tokio::fs::write(
-        out_dir.join("failures.json"),
-        serde_json::to_vec_pretty(failures).map_err(anyhow::Error::from)?,
-    )
-    .await
-    .map_err(|err| AppError::Anyhow(err.into()))?;
+    if let Err(err) = tokio::fs::rename(&temporary, path).await {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(AppError::Anyhow(err.into()));
+    }
     Ok(())
 }
 
@@ -355,5 +354,12 @@ mod tests {
         apply_extraction_visibility(&mut row, true, true);
         assert!(row.contains_key("overall_summary"));
         assert!(row.contains_key("about"));
+    }
+
+    #[test]
+    fn requested_workers_are_bounded_by_server_limit() {
+        assert_eq!(bounded_workers(Some(100), 2, 2), 2);
+        assert_eq!(bounded_workers(Some(0), 2, 2), 1);
+        assert_eq!(bounded_workers(None, 4, 2), 2);
     }
 }

@@ -1,11 +1,12 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::{Path, PathBuf}, sync::Arc};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Path as AxumPath, State},
     http::{header::AUTHORIZATION, HeaderMap},
     routing::{get, post},
     Json, Router,
 };
+use tokio::sync::Semaphore;
 use tower_http::{cors::CorsLayer, services::ServeDir};
 
 use crate::{
@@ -26,6 +27,10 @@ pub struct AppState {
     pub jobs: JobStore,
     pub usage: UsageStore,
     pub client: reqwest::Client,
+    pub job_slots: Arc<Semaphore>,
+    pub max_job_records: usize,
+    pub max_asins: usize,
+    pub max_workers: usize,
 }
 
 pub fn app(state: Arc<AppState>) -> Router {
@@ -55,18 +60,59 @@ async fn create_job(
             "no valid ASINs".to_string(),
         ));
     }
+    if asin_count > state.max_asins {
+        return Err(crate::error::AppError::BadRequest(format!(
+            "too many ASINs: maximum is {}",
+            state.max_asins
+        )));
+    }
     let marketplace = pipeline::marketplace_code(request.marketplace.as_deref())?;
-    state.usage.record(&marketplace, asin_count).await?;
-    let progress = state.jobs.create(asin_count).await;
+    let (progress, removed_job_ids) = state
+        .jobs
+        .create(asin_count, state.max_job_records)
+        .await
+        .ok_or_else(|| {
+            crate::error::AppError::Busy(
+                "任务队列已满，请等待当前任务完成后重试".to_string(),
+            )
+        })?;
+    cleanup_job_outputs(&state.root, &removed_job_ids).await;
+
+    if let Err(err) = state.usage.record(&marketplace, asin_count).await {
+        state.jobs.fail(&progress.job_id, err.to_string()).await;
+        return Err(err);
+    }
+
     let job_id = progress.job_id.clone();
     let task_state = state.clone();
     tokio::spawn(async move {
+        let _permit = match task_state.job_slots.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(err) => {
+                task_state
+                    .jobs
+                    .fail(&job_id, format!("任务调度器不可用: {err}"))
+                    .await;
+                return;
+            }
+        };
         match pipeline::process_asins_with_progress(&task_state, request, job_id.clone()).await {
             Ok(response) => task_state.jobs.done(&job_id, response).await,
             Err(err) => task_state.jobs.fail(&job_id, err.to_string()).await,
         }
     });
     Ok(Json(progress))
+}
+
+async fn cleanup_job_outputs(root: &Path, job_ids: &[String]) {
+    for job_id in job_ids {
+        let path = root.join("output/jobs").join(job_id);
+        match tokio::fs::remove_dir_all(&path).await {
+            Ok(()) => tracing::debug!(job_id, "removed expired job output"),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => tracing::warn!(job_id, error = %err, "failed to remove expired job output"),
+        }
+    }
 }
 
 async fn admin_login(
@@ -101,7 +147,7 @@ async fn get_usage(
 
 async fn get_job(
     State(state): State<Arc<AppState>>,
-    Path(job_id): Path<String>,
+    AxumPath(job_id): AxumPath<String>,
 ) -> Result<Json<RunProgress>> {
     let progress = state
         .jobs

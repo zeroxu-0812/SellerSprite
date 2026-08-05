@@ -29,10 +29,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("backend has project parent")
-        .to_path_buf();
+    let root = app_root()?;
     load_env(root.join(".env")).await?;
     default_refresh_command();
     let config = AppConfig::load(root.join("config.json")).await?;
@@ -80,6 +77,13 @@ fn env_usize(name: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn app_root() -> anyhow::Result<PathBuf> {
+    if let Some(root) = std::env::var_os("SELLERSPRITE_ROOT") {
+        return Ok(PathBuf::from(root));
+    }
+    Ok(std::env::current_dir()?)
+}
+
 async fn load_env(path: PathBuf) -> anyhow::Result<()> {
     let raw = match tokio::fs::read_to_string(path).await {
         Ok(raw) => raw,
@@ -117,6 +121,11 @@ fn default_refresh_command() {
             .ok()
             .is_some_and(|v| !v.trim().is_empty());
     if has_login {
-        std::env::set_var("KEEPA_TOKEN_REFRESH_COMMAND", "python3 refresh_tokens.py");
+        let command = if cfg!(windows) {
+            "python refresh_tokens.py"
+        } else {
+            "python3 refresh_tokens.py"
+        };
+        std::env::set_var("KEEPA_TOKEN_REFRESH_COMMAND", command);
     }
 }

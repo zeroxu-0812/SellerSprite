@@ -200,8 +200,13 @@ impl TokenManager {
                 return Ok(Some(cached));
             }
         }
-        let output = tokio::process::Command::new("sh")
-            .arg("-lc")
+        let (shell, shell_arg) = if cfg!(windows) {
+            ("cmd", "/C")
+        } else {
+            ("sh", "-lc")
+        };
+        let output = tokio::process::Command::new(shell)
+            .arg(shell_arg)
             .arg(command)
             .output()
             .await

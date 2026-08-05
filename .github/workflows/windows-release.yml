@@ -1,0 +1,50 @@
+name: Build Windows release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build backend
+        run: cargo build --release --locked --manifest-path backend/Cargo.toml
+
+      - name: Package application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release/frontend | Out-Null
+          Copy-Item backend/target/release/sellersprite-backend.exe release/
+          Copy-Item frontend/dist release/frontend/dist -Recurse
+          Copy-Item config.json, refresh_tokens.py, sellersprite_signing.py, .env.example release/
+          @'
+          $ErrorActionPreference = "Stop"
+          Set-Location $PSScriptRoot
+          if (-not $env:SELLERSPRITE_BIND) {
+            $env:SELLERSPRITE_BIND = "0.0.0.0:8787"
+          }
+          .\sellersprite-backend.exe
+          '@ | Set-Content release/start.ps1 -Encoding UTF8
+          Compress-Archive -Path release/* -DestinationPath sellersprite-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sellersprite-windows
+          path: sellersprite-windows.zip
+          retention-days: 7

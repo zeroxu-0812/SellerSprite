@@ -120,3 +120,16 @@ volumes:
 ```
 
 通常不需要这么做，程序会自动重新登录刷新。
+
+## Windows 原生部署
+
+无法运行 Linux 容器的 Windows 主机可以使用 GitHub Actions 的 `Build Windows release` 工作流生成发布包。发布包包含后端可执行文件、已构建前端和 Python 刷新脚本。
+
+服务器要求：
+
+- Windows 已安装 Python 3，并且 `python` 在系统 PATH 中。
+- 将发布包解压到固定目录，并在同一目录放置 `.env`。
+- 从发布目录运行 `powershell -ExecutionPolicy Bypass -File .\start.ps1`。
+- Windows 防火墙和云安全组放行 TCP `8787`。
+
+后端默认以当前工作目录作为应用根目录，也可通过 `SELLERSPRITE_ROOT` 显式指定。Windows 下 Token 刷新命令通过 `cmd /C` 执行，Linux 下仍使用 `sh -lc`。

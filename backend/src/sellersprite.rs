@@ -43,6 +43,7 @@ pub async fn lookup_asins(
                     asin: asin.to_string(),
                     stage: "sellersprite_lookup".to_string(),
                     message: message.clone(),
+                    marketplace: None,
                 }));
             }
             Err(err) => return Err(err),
@@ -229,6 +230,7 @@ fn parse_payload(mut payload: Value) -> LookupOutput {
             message:
                 "卖家精灵返回 crawlAsins，表示该 ASIN 暂无现成明细，可能正在排队抓取；稍后重试。"
                     .to_string(),
+            marketplace: None,
         })
         .collect();
     LookupOutput { items, failures }

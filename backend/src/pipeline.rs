@@ -30,108 +30,158 @@ pub async fn process_asins_with_progress(
     job_id: String,
 ) -> Result<RunResponse> {
     let (include_summary, include_details) = request.extraction_options();
-    let RunRequest {
-        asins,
-        marketplace,
-        include_summary: _,
-        include_details: _,
-        mode: _,
-        workers,
-    } = request;
-    let asins = normalize_asins(asins);
+    let selected_marketplaces = marketplace_codes(&request)?;
+    let workers_requested = request.workers;
+    let asins = normalize_asins(request.asins);
     if asins.is_empty() {
         return Err(AppError::BadRequest("no valid ASINs".to_string()));
     }
-    let runtime_config = config_for_marketplace(&state.config, marketplace.as_deref())?;
-    state.jobs.set_total(&job_id, asins.len()).await;
-    state
-        .jobs
-        .running(&job_id, format!("卖家精灵 {}", runtime_config.station))
-        .await;
-    let workers = bounded_workers(
-        workers,
-        runtime_config.concurrency.workers,
-        state.max_workers,
-    );
-    let mut lookup =
-        sellersprite::lookup_asins(&state.client, &runtime_config, &state.token_manager, &asins)
-            .await?;
-    let completed = if include_details { 0 } else { asins.len() };
-    state
-        .jobs
-        .advance(&job_id, completed, None, format!("卖家精灵 {}", runtime_config.station))
-        .await;
-    let mut failures = Vec::new();
-    failures.append(&mut lookup.failures);
-    let mut by_asin: BTreeMap<String, Value> = lookup
-        .items
-        .into_iter()
-        .filter_map(|item| {
-            let asin = item
-                .get("asin")
-                .and_then(|v| v.as_str())
-                .map(str::to_string)?;
-            Some((asin, item))
-        })
-        .collect();
+    let total_work = asins
+        .len()
+        .checked_mul(selected_marketplaces.len())
+        .ok_or_else(|| AppError::BadRequest("任务规模超出限制".to_string()))?;
+    state.jobs.set_total(&job_id, total_work).await;
 
-    if include_details {
-        let details = fetch_details(
-            state,
+    let mut failures = Vec::new();
+    let mut rows = Vec::new();
+    let mut marketplace_overviews = BTreeMap::new();
+
+    for (marketplace_index, marketplace) in selected_marketplaces.iter().enumerate() {
+        let progress_offset = marketplace_index * asins.len();
+        let runtime_config = config_for_marketplace(&state.config, marketplace)?;
+        state
+            .jobs
+            .running(&job_id, format!("卖家精灵 {}", runtime_config.station))
+            .await;
+        let workers = bounded_workers(
+            workers_requested,
+            runtime_config.concurrency.workers,
+            state.max_workers,
+        );
+        let mut lookup = sellersprite::lookup_asins(
+            &state.client,
             &runtime_config,
-            by_asin.keys().cloned().collect(),
-            workers,
-            &job_id,
+            &state.token_manager,
+            &asins,
         )
-        .await;
-        for (asin, result) in details {
-            match result {
-                Ok(detail) => apply_detail(by_asin.get_mut(&asin), detail),
-                Err(message) => failures.push(Failure {
-                    asin,
-                    stage: "amazon_detail".to_string(),
-                    message,
-                }),
+        .await?;
+        for failure in &mut lookup.failures {
+            failure.marketplace = Some(marketplace.clone());
+        }
+        failures.append(&mut lookup.failures);
+        let completed = if include_details {
+            progress_offset
+        } else {
+            progress_offset + asins.len()
+        };
+        state
+            .jobs
+            .advance(
+                &job_id,
+                completed,
+                None,
+                format!("卖家精灵 {}", runtime_config.station),
+            )
+            .await;
+
+        let mut by_asin: BTreeMap<String, Value> = lookup
+            .items
+            .into_iter()
+            .filter_map(|item| {
+                let asin = item
+                    .get("asin")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)?;
+                Some((asin, item))
+            })
+            .collect();
+
+        if include_details {
+            let details = fetch_details(
+                state,
+                &runtime_config,
+                by_asin.keys().cloned().collect(),
+                workers,
+                &job_id,
+                progress_offset,
+            )
+            .await;
+            for (asin, result) in details {
+                match result {
+                    Ok(detail) => apply_detail(by_asin.get_mut(&asin), detail),
+                    Err(message) => failures.push(Failure {
+                        asin,
+                        stage: "amazon_detail".to_string(),
+                        message,
+                        marketplace: Some(marketplace.clone()),
+                    }),
+                }
             }
         }
+
+        let mut marketplace_rows = by_asin
+            .values()
+            .map(flatten_record)
+            .map(|mut row| {
+                enrich_derived(&mut row, &runtime_config.amazon.base_url);
+                if include_summary {
+                    enrich_product_summary(&mut row);
+                }
+                apply_extraction_visibility(&mut row, include_summary, include_details);
+                row.insert(
+                    "marketplace_code".to_string(),
+                    Value::String(marketplace.clone()),
+                );
+                row.insert(
+                    "marketplace_station".to_string(),
+                    Value::String(runtime_config.station.clone()),
+                );
+                row.insert(
+                    "amazon_base_url".to_string(),
+                    Value::String(runtime_config.amazon.base_url.clone()),
+                );
+                clean_row(row)
+            })
+            .collect::<Vec<_>>();
+        marketplace_rows.sort_by(|a, b| {
+            a.get("asin")
+                .and_then(|v| v.as_str())
+                .cmp(&b.get("asin").and_then(|v| v.as_str()))
+        });
+        let marketplace_overview = derive_market_overview(&marketplace_rows);
+        marketplace_overviews.insert(marketplace.clone(), marketplace_overview);
+        rows.append(&mut marketplace_rows);
     }
 
-    let mut rows = by_asin
-        .values()
-        .map(flatten_record)
-        .map(|mut row| {
-            enrich_derived(&mut row, &runtime_config.amazon.base_url);
-            if include_summary {
-                enrich_product_summary(&mut row);
-            }
-            apply_extraction_visibility(&mut row, include_summary, include_details);
-            row.insert(
-                "marketplace_station".to_string(),
-                Value::String(runtime_config.station.clone()),
-            );
-            row.insert(
-                "amazon_base_url".to_string(),
-                Value::String(runtime_config.amazon.base_url.clone()),
-            );
-            clean_row(row)
-        })
-        .collect::<Vec<_>>();
     rows.sort_by(|a, b| {
-        a.get("asin")
+        a.get("marketplace_code")
             .and_then(|v| v.as_str())
-            .cmp(&b.get("asin").and_then(|v| v.as_str()))
+            .cmp(&b.get("marketplace_code").and_then(|v| v.as_str()))
+            .then_with(|| {
+                a.get("asin")
+                    .and_then(|v| v.as_str())
+                    .cmp(&b.get("asin").and_then(|v| v.as_str()))
+            })
     });
-    let overview = derive_market_overview(&rows);
+    let overview = marketplace_overviews.values().next().cloned().unwrap_or_default();
     let out_dir = state.root.join("output").join("jobs").join(&job_id);
-    write_outputs(&out_dir, &rows, &overview, &failures).await?;
+    write_outputs(
+        &out_dir,
+        &rows,
+        &overview,
+        &marketplace_overviews,
+        &failures,
+    )
+    .await?;
 
     let response = RunResponse {
         products: rows,
         overview,
+        marketplace_overviews,
         failures,
         output_dir: out_dir.to_string_lossy().to_string(),
     };
-    state.jobs.advance(&job_id, asins.len(), None, "完成").await;
+    state.jobs.advance(&job_id, total_work, None, "完成").await;
     Ok(response)
 }
 
@@ -162,8 +212,8 @@ fn apply_extraction_visibility(
     }
 }
 
-fn config_for_marketplace(base: &AppConfig, marketplace: Option<&str>) -> Result<AppConfig> {
-    let code = marketplace_code(marketplace)?;
+fn config_for_marketplace(base: &AppConfig, marketplace: &str) -> Result<AppConfig> {
+    let code = marketplace_code(Some(marketplace))?;
     let (station, amazon_base_url) = match code.as_str() {
         "com" => ("US", "https://www.amazon.com"),
         "it" => ("IT", "https://www.amazon.it"),
@@ -178,6 +228,32 @@ fn config_for_marketplace(base: &AppConfig, marketplace: Option<&str>) -> Result
     config.station = station.to_string();
     config.amazon.base_url = amazon_base_url.to_string();
     Ok(config)
+}
+
+pub fn marketplace_codes(request: &RunRequest) -> Result<Vec<String>> {
+    let raw_marketplaces = request
+        .marketplaces
+        .as_ref()
+        .filter(|values| !values.is_empty())
+        .cloned()
+        .unwrap_or_else(|| {
+            request
+                .marketplace
+                .clone()
+                .map(|value| vec![value])
+                .unwrap_or_else(|| vec!["com".to_string()])
+        });
+    let mut codes = Vec::new();
+    for raw in raw_marketplaces {
+        let code = marketplace_code(Some(&raw))?;
+        if !codes.contains(&code) {
+            codes.push(code);
+        }
+    }
+    if codes.is_empty() {
+        codes.push("com".to_string());
+    }
+    Ok(codes)
 }
 
 pub fn marketplace_code(marketplace: Option<&str>) -> Result<String> {
@@ -232,6 +308,7 @@ async fn fetch_details(
     asins: Vec<String>,
     workers: usize,
     job_id: &str,
+    progress_offset: usize,
 ) -> Vec<(String, std::result::Result<ProductDetail, String>)> {
     let total = asins.len();
     let completed = Arc::new(AtomicUsize::new(0));
@@ -246,7 +323,12 @@ async fn fetch_details(
             let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
             state
                 .jobs
-                .advance(job_id, done, Some(asin.clone()), format!("详情页 {done}/{total}"))
+                .advance(
+                    job_id,
+                    progress_offset + done,
+                    Some(asin.clone()),
+                    format!("{} 详情页 {done}/{total}", config.station),
+                )
                 .await;
             (asin, result)
             }
@@ -289,6 +371,7 @@ async fn write_outputs(
     out_dir: &Path,
     products: &[BTreeMap<String, Value>],
     overview: &crate::models::MarketOverview,
+    marketplace_overviews: &BTreeMap<String, crate::models::MarketOverview>,
     failures: &[Failure],
 ) -> Result<()> {
     tokio::fs::create_dir_all(out_dir)
@@ -296,6 +379,11 @@ async fn write_outputs(
         .map_err(|err| AppError::Anyhow(err.into()))?;
     write_json_atomic(&out_dir.join("products.json"), products).await?;
     write_json_atomic(&out_dir.join("market_overview.json"), overview).await?;
+    write_json_atomic(
+        &out_dir.join("marketplace_overviews.json"),
+        marketplace_overviews,
+    )
+    .await?;
     write_json_atomic(&out_dir.join("failures.json"), failures).await?;
     Ok(())
 }
@@ -361,5 +449,30 @@ mod tests {
         assert_eq!(bounded_workers(Some(100), 2, 2), 2);
         assert_eq!(bounded_workers(Some(0), 2, 2), 1);
         assert_eq!(bounded_workers(None, 4, 2), 2);
+    }
+
+    #[test]
+    fn canonicalizes_and_deduplicates_selected_marketplaces() {
+        let request: RunRequest = serde_json::from_value(json!({
+            "asins": ["B0BHV5TTL6"],
+            "marketplaces": ["DE", "jp", "germany", "JP"]
+        }))
+        .expect("valid request");
+
+        assert_eq!(
+            marketplace_codes(&request).expect("supported marketplaces"),
+            vec!["de", "jp"]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_legacy_single_marketplace_field() {
+        let request: RunRequest = serde_json::from_value(json!({
+            "asins": ["B0BHV5TTL6"],
+            "marketplace": "uk"
+        }))
+        .expect("valid request");
+
+        assert_eq!(marketplace_codes(&request).unwrap(), vec!["uk"]);
     }
 }

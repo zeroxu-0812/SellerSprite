@@ -125,11 +125,14 @@ curl http://127.0.0.1:8787/api/health
 ```json
 {
   "asins": ["B0F1QHNFJP", "B09PVMTM9W"],
+  "marketplaces": ["com", "de", "jp"],
   "includeSummary": true,
   "includeDetails": true,
   "workers": 2
 }
 ```
+
+`marketplaces` 支持 `com`、`it`、`uk`、`fr`、`es`、`de`、`jp`，至少选择一个站点。同一 ASIN 在多个站点返回时会保留为多条结果，并在 `marketplace_code`、`marketplace_station` 和前端“来源站点”列中标明来源。旧调用仍可使用单值 `marketplace` 字段。
 
 抓取选项：
 
@@ -152,6 +155,7 @@ curl http://127.0.0.1:8787/api/health
 - 卖家精灵请求有超时、重试、backoff。
 - auth 过期会自动刷新 token 并重试。
 - 后端使用全局任务信号量控制同时运行的抓取任务，超出的任务保持排队。
+- 同一任务选择多个站点时按站点串行抓取，避免一次查询把上游请求并发放大。
 - 每个任务强制使用独立的输出目录，避免并发任务互相覆盖结果。
 - 服务端会限制单任务 ASIN 数量和 Amazon 详情页并发，不能通过直接调用 API 绕过。
 - 前端显示真实任务进度，不使用假进度条。
@@ -169,6 +173,7 @@ curl http://127.0.0.1:8787/api/health
 ```text
 output/jobs/{job_id}/products.json
 output/jobs/{job_id}/market_overview.json
+output/jobs/{job_id}/marketplace_overviews.json
 output/jobs/{job_id}/failures.json
 output/search_usage.json
 ```

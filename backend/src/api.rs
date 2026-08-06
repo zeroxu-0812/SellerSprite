@@ -66,10 +66,13 @@ async fn create_job(
             state.max_asins
         )));
     }
-    let marketplace = pipeline::marketplace_code(request.marketplace.as_deref())?;
+    let marketplaces = pipeline::marketplace_codes(&request)?;
+    let work_units = asin_count
+        .checked_mul(marketplaces.len())
+        .ok_or_else(|| crate::error::AppError::BadRequest("任务规模超出限制".to_string()))?;
     let (progress, removed_job_ids) = state
         .jobs
-        .create(asin_count, state.max_job_records)
+        .create(work_units, state.max_job_records)
         .await
         .ok_or_else(|| {
             crate::error::AppError::Busy(
@@ -78,7 +81,7 @@ async fn create_job(
         })?;
     cleanup_job_outputs(&state.root, &removed_job_ids).await;
 
-    if let Err(err) = state.usage.record(&marketplace, asin_count).await {
+    if let Err(err) = state.usage.record_many(&marketplaces, asin_count).await {
         state.jobs.fail(&progress.job_id, err.to_string()).await;
         return Err(err);
     }

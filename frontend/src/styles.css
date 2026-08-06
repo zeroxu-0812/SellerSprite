@@ -343,6 +343,23 @@ input[type='search']:focus {
   overflow-wrap: anywhere;
 }
 
+.marketplace-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.marketplace-section-heading b {
+  color: var(--link);
+  font-size: 11px;
+}
+
+.marketplace-button small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .segmented button.active,
 .marketplace-button.active,
 .density-toggle button.active,
@@ -454,6 +471,47 @@ input[type='range'] {
 
 .metric-card[data-tone='accent'] strong {
   color: #b15a00;
+}
+
+.metrics-by-marketplace {
+  display: grid;
+  gap: 12px;
+}
+
+.marketplace-metric-group {
+  display: grid;
+  gap: 8px;
+}
+
+.marketplace-metric-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 2px;
+  color: var(--navy);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.marketplace-metric-group > header div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.marketplace-metric-group > header div span {
+  font-size: 18px;
+}
+
+.marketplace-metric-group > header small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.marketplace-metric-group .metric-strip {
+  border: 0;
+  border-radius: 0;
 }
 
 .failure-panel {
@@ -860,6 +918,33 @@ input[type='search'] {
   margin-top: 2px;
   color: var(--faint);
   font-size: 12px;
+}
+
+.marketplace-cell {
+  min-width: 120px;
+}
+
+.marketplace-source {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: 6px;
+  line-height: 1.35;
+}
+
+.marketplace-source .marketplace-flag {
+  grid-row: span 2;
+  font-size: 20px;
+}
+
+.marketplace-source b {
+  color: var(--text);
+}
+
+.marketplace-source small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .lbl {

@@ -5,7 +5,7 @@ import { marketplaces } from '../utils/marketplaces'
 
 const props = defineProps<{
   rawInput: string
-  marketplace: MarketplaceCode
+  selectedMarketplaces: MarketplaceCode[]
   includeSummary: boolean
   includeDetails: boolean
   workers: number
@@ -16,7 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:rawInput': [value: string]
-  'update:marketplace': [value: MarketplaceCode]
+  'update:selectedMarketplaces': [value: MarketplaceCode[]]
   'update:includeSummary': [value: boolean]
   'update:includeDetails': [value: boolean]
   'update:workers': [value: number]
@@ -36,6 +36,21 @@ function toggleSummary(checked: boolean) {
 
 function toggleDetails(checked: boolean) {
   emit('update:includeDetails', checked)
+}
+
+function isMarketplaceSelected(code: MarketplaceCode) {
+  return props.selectedMarketplaces.includes(code)
+}
+
+function toggleMarketplace(code: MarketplaceCode) {
+  const selected = new Set(props.selectedMarketplaces)
+  if (selected.has(code)) {
+    if (selected.size === 1) return
+    selected.delete(code)
+  } else {
+    selected.add(code)
+  }
+  emit('update:selectedMarketplaces', Array.from(selected))
 }
 </script>
 
@@ -66,18 +81,22 @@ function toggleDetails(checked: boolean) {
       </div>
 
       <div class="panel-section">
-        <div class="section-label">目标站点</div>
+        <div class="section-label marketplace-section-heading">
+          <span>目标站点</span>
+          <b>{{ selectedMarketplaces.length }} 个已选</b>
+        </div>
         <div class="marketplace-grid">
           <button
             v-for="item in marketplaces"
             :key="item.code"
             type="button"
             class="marketplace-button"
-            :class="{ active: marketplace === item.code }"
-            :aria-pressed="marketplace === item.code"
-            @click="emit('update:marketplace', item.code)"
+            :class="{ active: isMarketplaceSelected(item.code) }"
+            :aria-pressed="isMarketplaceSelected(item.code)"
+            @click="toggleMarketplace(item.code)"
           >
             <b><span>{{ item.flag }}</span>{{ item.label }}</b>
+            <small>{{ isMarketplaceSelected(item.code) ? '已选择' : '未选择' }}</small>
           </button>
         </div>
       </div>

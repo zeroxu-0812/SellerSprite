@@ -2,7 +2,8 @@ export type MarketplaceCode = 'com' | 'it' | 'uk' | 'fr' | 'es' | 'de' | 'jp'
 
 export interface RunRequest {
   asins: string[]
-  marketplace: MarketplaceCode
+  marketplaces: MarketplaceCode[]
+  marketplace?: MarketplaceCode
   includeSummary: boolean
   includeDetails: boolean
   workers?: number
@@ -17,6 +18,7 @@ export interface Failure {
   asin: string
   stage: string
   message: string
+  marketplace?: MarketplaceCode | string
 }
 
 export interface MarketOverview {
@@ -35,6 +37,7 @@ export interface MarketOverview {
 export interface RunResponse {
   products: ProductRow[]
   overview: MarketOverview
+  marketplace_overviews?: Record<string, MarketOverview>
   failures: Failure[]
   output_dir: string
 }

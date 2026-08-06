@@ -106,6 +106,7 @@ SELLERSPRITE_MAX_DETAIL_WORKERS=2
 
 - `jobs/{job_id}/products.json`
 - `jobs/{job_id}/market_overview.json`
+- `jobs/{job_id}/marketplace_overviews.json`
 - `jobs/{job_id}/failures.json`
 
 任务写入使用临时文件完成后原子替换，达到任务记录上限时只清理已完成或失败任务的目录。

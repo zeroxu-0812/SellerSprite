@@ -22,6 +22,8 @@ pub struct RunRequest {
     #[serde(default, alias = "station")]
     pub marketplace: Option<String>,
     #[serde(default)]
+    pub marketplaces: Option<Vec<String>>,
+    #[serde(default)]
     pub include_summary: Option<bool>,
     #[serde(default)]
     pub include_details: Option<bool>,
@@ -50,6 +52,7 @@ impl RunRequest {
 pub struct RunResponse {
     pub products: Vec<BTreeMap<String, Value>>,
     pub overview: MarketOverview,
+    pub marketplace_overviews: BTreeMap<String, MarketOverview>,
     pub failures: Vec<Failure>,
     pub output_dir: String,
 }
@@ -59,6 +62,8 @@ pub struct Failure {
     pub asin: String,
     pub stage: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marketplace: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -117,5 +122,14 @@ mod tests {
     fn keeps_legacy_full_mode_compatible() {
         let request = request(r#"{"asins":["B0BHV5TTL6"],"mode":"full"}"#);
         assert_eq!(request.extraction_options(), (true, true));
+    }
+
+    #[test]
+    fn accepts_multiple_marketplaces_without_changing_extraction_options() {
+        let request = request(
+            r#"{"asins":["B0BHV5TTL6"],"marketplaces":["de","jp"],"includeSummary":true}"#,
+        );
+        assert_eq!(request.marketplaces, Some(vec!["de".to_string(), "jp".to_string()]));
+        assert_eq!(request.extraction_options(), (true, false));
     }
 }

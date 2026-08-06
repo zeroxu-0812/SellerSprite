@@ -24,8 +24,8 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
       sortType: column.sortType || 'text',
     })),
     rows: products.map((product, index) => ({
-      id: String(product.asin || product.title || index),
-      search: ['asin', 'title', 'brand', 'seller_name']
+      id: `${String(product.marketplace_code || product.marketplace_station || marketplace || 'com').toLowerCase()}:${String(product.asin || product.title || index)}`,
+      search: ['asin', 'title', 'brand', 'seller_name', 'marketplace_code', 'marketplace_station']
         .map((key) => String(product[key] ?? ''))
         .join(' ')
         .toLowerCase(),

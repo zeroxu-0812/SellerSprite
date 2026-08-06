@@ -55,9 +55,16 @@ impl UsageStore {
         snapshot(&state)
     }
 
-    pub async fn record(&self, marketplace: &str, asin_count: usize) -> Result<UsageSnapshot> {
+    pub async fn record_many(
+        &self,
+        marketplaces: &[String],
+        asin_count: usize,
+    ) -> Result<UsageSnapshot> {
         let mut state = self.state.lock().await;
-        apply_record(&mut state, marketplace, asin_count, Utc::now().to_rfc3339());
+        let searched_at = Utc::now().to_rfc3339();
+        for marketplace in marketplaces {
+            apply_record(&mut state, marketplace, asin_count, searched_at.clone());
+        }
         self.persist(&state).await?;
         Ok(snapshot(&state))
     }
@@ -132,5 +139,21 @@ mod tests {
         assert_eq!(result.marketplaces["de"].count, 1);
         assert_eq!(result.recent[0].marketplace, "jp");
         assert_eq!(result.recent[0].asin_count, 1);
+    }
+
+    #[test]
+    fn records_one_search_for_each_selected_marketplace() {
+        let mut state = PersistedUsage::default();
+        let searched_at = "2026-08-05T10:00:00Z".to_string();
+        for marketplace in ["com", "de", "jp"] {
+            apply_record(&mut state, marketplace, 1, searched_at.clone());
+        }
+
+        let result = snapshot(&state);
+        assert_eq!(result.total, 3);
+        assert_eq!(result.marketplaces["com"].count, 1);
+        assert_eq!(result.marketplaces["de"].count, 1);
+        assert_eq!(result.marketplaces["jp"].count, 1);
+        assert_eq!(result.recent.len(), 3);
     }
 }

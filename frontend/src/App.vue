@@ -15,7 +15,7 @@ type AppPage = 'landing' | 'analyze' | 'results' | 'dashboard'
 
 const page = ref<AppPage>(pageFromHash())
 const rawInput = ref('')
-const marketplace = ref<MarketplaceCode>('com')
+const selectedMarketplaces = ref<MarketplaceCode[]>(['com'])
 const includeSummary = ref(false)
 const includeDetails = ref(false)
 const workers = ref(2)
@@ -155,7 +155,8 @@ async function run() {
   try {
     progress.value = await createJob({
       asins: asins.value,
-      marketplace: marketplace.value,
+      marketplaces: selectedMarketplaces.value,
+      marketplace: selectedMarketplaces.value[0] || 'com',
       includeSummary: includeSummary.value,
       includeDetails: includeDetails.value,
       workers: workers.value,
@@ -214,8 +215,8 @@ const progressText = computed(() => {
 })
 
 const resultMarketplace = computed(() => {
-  const station = result.value?.products.find((product) => product.marketplace_station)?.marketplace_station
-  return String(station || marketplace.value)
+  const code = result.value?.products.find((product) => product.marketplace_code)?.marketplace_code
+  return String(code || selectedMarketplaces.value[0] || 'com')
 })
 
 function formatUsageTime(value: string) {
@@ -292,7 +293,7 @@ onUnmounted(() => {
 
         <RunControlPanel
           v-model:raw-input="rawInput"
-          v-model:marketplace="marketplace"
+          v-model:selected-marketplaces="selectedMarketplaces"
           v-model:include-summary="includeSummary"
           v-model:include-details="includeDetails"
           v-model:workers="workers"
@@ -338,7 +339,11 @@ onUnmounted(() => {
         </section>
 
         <section v-else class="workbench result-workbench">
-          <MarketMetrics :overview="result.overview" :marketplace="resultMarketplace" />
+          <MarketMetrics
+            :overview="result.overview"
+            :marketplace-overviews="result.marketplace_overviews"
+            :marketplace="resultMarketplace"
+          />
           <FailurePanel v-if="result.failures.length" :failures="result.failures" />
           <ProductTable :products="result.products" :marketplace="resultMarketplace" />
         </section>

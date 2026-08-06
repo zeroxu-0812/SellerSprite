@@ -36,7 +36,7 @@ const benchmarkOptions = computed(() => Object.entries(benchmarkLabels) as Array
 const selectedProfile = computed(() => profiles.value.find((profile) => profile.product === selectedProduct.value) || profiles.value[0] || null)
 const baselineProfile = computed(() => {
   if (!baselineAsin.value) return profiles.value[0] || null
-  return profiles.value.find((profile) => profile.product.asin === baselineAsin.value) || profiles.value[0] || null
+  return profiles.value.find((profile, index) => productKey(profile.product, index) === baselineAsin.value) || profiles.value[0] || null
 })
 
 const filteredProducts = computed(() => {
@@ -44,7 +44,7 @@ const filteredProducts = computed(() => {
   const products = profiles.value.map((profile) => profile.product)
   const filtered = keyword
     ? products.filter((product) =>
-    ['asin', 'title', 'brand', 'seller_name'].some((key) =>
+    ['asin', 'title', 'brand', 'seller_name', 'marketplace_code', 'marketplace_station'].some((key) =>
       String(product[key] ?? '').toLowerCase().includes(keyword),
     ),
   )
@@ -116,12 +116,25 @@ function sortableValue(value: unknown, type: ProductColumn['sortType']): string 
   return String(value).toLowerCase()
 }
 
+function productKey(product: ProductRow, index = 0): string {
+  const marketplace = String(product.marketplace_code || product.marketplace_station || props.marketplace || 'com').toLowerCase()
+  return `${marketplace}:${String(product.asin || product.title || index)}`
+}
+
 function rowKey(product: ProductRow, index: number): string {
-  return String(product.asin || product.title || index)
+  return productKey(product, index)
+}
+
+function marketplaceFor(product: ProductRow): string {
+  return String(product.marketplace_code || props.marketplace || 'com')
 }
 
 function exportHtml() {
-  exportCompetitorTableHtml(filteredProducts.value, visibleColumns.value, props.marketplace)
+  const sourceColumn = productColumns.find((column) => column.key === 'marketplace_code')
+  const exportColumns = sourceColumn && !visibleColumns.value.some((column) => column.key === sourceColumn.key)
+    ? [sourceColumn, ...visibleColumns.value]
+    : visibleColumns.value
+  exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace)
 }
 
 </script>
@@ -163,8 +176,8 @@ function exportHtml() {
         基准竞手
         <select v-model="baselineAsin">
           <option value="">默认第一名</option>
-          <option v-for="profile in profiles" :key="String(profile.product.asin)" :value="String(profile.product.asin)">
-            {{ profile.product.asin }} · {{ profile.product.brand || profile.product.seller_name || '未知' }}
+            <option v-for="(profile, index) in profiles" :key="productKey(profile.product, index)" :value="productKey(profile.product, index)">
+            {{ profile.product.asin }} · {{ profile.product.marketplace_station || profile.product.marketplace_code || '未知站点' }} · {{ profile.product.brand || profile.product.seller_name || '未知' }}
           </option>
         </select>
       </label>
@@ -240,7 +253,7 @@ function exportHtml() {
         :profile="selectedProfile"
         :baseline="baselineProfile"
         :metric="activeMetric"
-        :marketplace="marketplace"
+        :marketplace="selectedProfile ? marketplaceFor(selectedProfile.product) : marketplace"
       />
     </div>
   </section>

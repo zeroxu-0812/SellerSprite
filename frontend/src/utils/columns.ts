@@ -1,6 +1,8 @@
 import type { ProductRow } from '../types'
+import type { MarketplaceCode } from '../types'
 import { fmt, parseList, parseTrend, plain, safe } from './formatters'
 import { isNewProduct } from './competitorAnalysis'
+import { marketplaceByCode } from './marketplaces'
 
 export interface ProductColumn {
   key: string
@@ -18,6 +20,7 @@ export const productColumns: ProductColumn[] = [
   { key: 'img', label: '主图', className: 'img-cell', group: 'identity', render: renderImage },
   { key: 'title', label: '标题', className: 'title-cell', group: 'identity', sortKey: 'title', sortType: 'text', render: renderTitle },
   { key: 'asin', label: 'ASIN', group: 'identity', sortKey: 'asin', sortType: 'text', render: renderAsin },
+  { key: 'marketplace_code', label: '来源站点', className: 'marketplace-cell', group: 'identity', sortKey: 'marketplace_code', sortType: 'text', render: renderMarketplace },
   { key: 'brand', label: '品牌', group: 'identity', sortKey: 'brand', sortType: 'text', render: renderBrand },
   { key: 'badges', label: '徽章', group: 'identity', render: (p) => renderBadges(p.badges) },
   { key: 'price', label: '价格', group: 'market', sortKey: 'price', sortType: 'number', render: renderPrice },
@@ -50,9 +53,19 @@ function renderAsin(product: ProductRow): string {
   return `<div class="asin-line"><span class="lbl">子ASIN:</span> <b>${fmt(product.asin)}</b></div><div class="parent-line"><span class="lbl">父ASIN:</span> ${fmt(product.parent)}</div>`
 }
 
+function renderMarketplace(product: ProductRow): string {
+  const code = String(product.marketplace_code || '').toLowerCase()
+  const info = marketplaceByCode[code as MarketplaceCode]
+  if (!info) return `<span class="empty">${safe(product.marketplace_station || '—')}</span>`
+  return `<div class="marketplace-source"><span class="marketplace-flag">${safe(info.flag)}</span><b>${safe(info.label)}站</b><small>${safe(code.toUpperCase())}</small></div>`
+}
+
 function renderBrand(product: ProductRow): string {
   const brandUrl = plain(product.brand_url)
-  const href = brandUrl ? `https://www.amazon.com/${brandUrl}` : '#'
+  const baseUrl = plain(product.amazon_base_url || 'https://www.amazon.com').replace(/\/+$/, '')
+  const href = brandUrl
+    ? (/^https?:\/\//i.test(brandUrl) ? brandUrl : `${baseUrl}/${brandUrl.replace(/^\/+/, '')}`)
+    : '#'
   return `<a class="brand-link" href="${safe(href)}" target="_blank" rel="noreferrer">${fmt(product.brand)}</a>`
 }
 

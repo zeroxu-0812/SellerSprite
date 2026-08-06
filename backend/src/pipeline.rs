@@ -163,7 +163,7 @@ pub async fn process_asins_with_progress(
                     .cmp(&b.get("asin").and_then(|v| v.as_str()))
             })
     });
-    let overview = marketplace_overviews.values().next().cloned().unwrap_or_default();
+    let overview = primary_overview(&selected_marketplaces, &marketplace_overviews);
     let out_dir = state.root.join("output").join("jobs").join(&job_id);
     write_outputs(
         &out_dir,
@@ -190,6 +190,17 @@ fn bounded_workers(requested: Option<usize>, configured: usize, maximum: usize) 
         .unwrap_or(configured)
         .max(1)
         .min(maximum.max(1))
+}
+
+fn primary_overview(
+    selected_marketplaces: &[String],
+    marketplace_overviews: &BTreeMap<String, crate::models::MarketOverview>,
+) -> crate::models::MarketOverview {
+    selected_marketplaces
+        .first()
+        .and_then(|marketplace| marketplace_overviews.get(marketplace))
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn apply_extraction_visibility(
@@ -474,5 +485,28 @@ mod tests {
         .expect("valid request");
 
         assert_eq!(marketplace_codes(&request).unwrap(), vec!["uk"]);
+    }
+
+    #[test]
+    fn legacy_overview_uses_first_selected_marketplace() {
+        let selected = vec!["jp".to_string(), "de".to_string()];
+        let overviews = BTreeMap::from([
+            (
+                "de".to_string(),
+                crate::models::MarketOverview {
+                    sample_size: 0,
+                    ..Default::default()
+                },
+            ),
+            (
+                "jp".to_string(),
+                crate::models::MarketOverview {
+                    sample_size: 1,
+                    ..Default::default()
+                },
+            ),
+        ]);
+
+        assert_eq!(primary_overview(&selected, &overviews).sample_size, 1);
     }
 }

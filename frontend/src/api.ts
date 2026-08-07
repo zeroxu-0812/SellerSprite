@@ -1,4 +1,4 @@
-import type { AdminLoginResponse, RunProgress, RunRequest, UsageResponse } from './types'
+import type { AdminLoginResponse, RunProgress, RunRequest, TrafficResponse, UsageResponse } from './types'
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -42,6 +42,12 @@ export async function getUsage(token: string): Promise<UsageResponse> {
   const response = await fetch('/api/usage', {
     headers: { authorization: `Bearer ${token}` },
   })
+  if (!response.ok) throw await responseError(response)
+  return response.json()
+}
+
+export async function getTraffic(asin: string, marketplace: string): Promise<TrafficResponse> {
+  const response = await fetch(`/api/traffic/${encodeURIComponent(marketplace)}/${encodeURIComponent(asin)}`)
   if (!response.ok) throw await responseError(response)
   return response.json()
 }

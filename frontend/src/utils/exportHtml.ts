@@ -90,6 +90,14 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
   .bsr-block{min-width:180px;line-height:1.8}.bsr-row{display:flex;justify-content:space-between;gap:8px}.bsr-row .rk{color:#c0392b;font-weight:800;white-space:nowrap}
   .seller-block,.sales-cell{min-width:150px;line-height:1.7}.seller-block .name{font-weight:700}.seller-block .nat{color:#98a2b3}
   .parent-u{color:#0a7ea4;font-weight:800}.child-u{color:#4a5260}.amount{color:#067647}.sub{color:#067647;font-size:12px}.sub.neg{color:#b42318}
+  .traffic-export-cell{min-width:218px}
+  .traffic-export-result{display:flex;align-items:center;gap:10px;min-height:46px}
+  .traffic-export-pie{position:relative;flex:0 0 42px;width:42px;height:42px;border-radius:50%;box-shadow:0 2px 7px rgba(16,24,40,.12)}
+  .traffic-export-pie:after{position:absolute;inset:9px;background:#fff;border-radius:50%;content:""}
+  .traffic-export-values{display:grid;gap:4px;min-width:120px}
+  .traffic-export-values span{display:grid;grid-template-columns:7px 34px auto;gap:5px;align-items:center;color:#667085;font-size:11px}
+  .traffic-export-values i{width:7px;height:7px;border-radius:2px}.traffic-export-values i.organic{background:#159a69}.traffic-export-values i.ads{background:#1687d2}
+  .traffic-export-values b{color:#25364a;font-size:12px;font-variant-numeric:tabular-nums}.traffic-export-status{display:flex;align-items:center;min-height:42px;color:#7b8794;font-size:11px}.traffic-export-status.error{color:#b42318}
   .trend-cell{width:260px;min-width:220px;max-width:280px}.trend-cell>div{width:100%;min-width:0;max-width:100%}.spark-row{width:100%;min-width:0;max-width:100%;margin-bottom:8px}.spark-label{margin-bottom:2px;color:#667085;font-size:11px;font-weight:800}.spark-sum{margin-left:4px;color:#98a2b3;font-weight:400}
   .spark{position:relative;display:flex;align-items:flex-end;width:100%;min-width:0;max-width:100%;height:54px;gap:4px;padding-top:20px;border-bottom:1px solid #e5e7ea}
   .bar{position:relative;min-width:0;flex:1 1 0;background:#08a5de;border-radius:3px 3px 0 0}.bar.parent{background:#5a7088}.bar.zero{background:#e8eaed}

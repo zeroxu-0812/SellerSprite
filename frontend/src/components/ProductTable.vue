@@ -130,13 +130,12 @@ function marketplaceFor(product: ProductRow): string {
   return String(product.marketplace_code || props.marketplace || 'com')
 }
 
-function exportHtml(language: ExportLanguage) {
+function exportHtml() {
   const sourceColumn = productColumns.find((column) => column.key === 'marketplace_code')
   const exportColumns = sourceColumn && !visibleColumns.value.some((column) => column.key === sourceColumn.key)
     ? [sourceColumn, ...visibleColumns.value]
     : visibleColumns.value
-  exportLanguage.value = language
-  exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace, language)
+  exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace, exportLanguage.value)
 }
 
 </script>
@@ -158,14 +157,9 @@ function exportHtml(language: ExportLanguage) {
             <button :class="{ active: exportLanguage === 'en' }" type="button" @click="exportLanguage = 'en'">English</button>
           </div>
         </div>
-        <div class="export-actions" aria-label="HTML 导出操作">
-          <button class="export-button export-button-zh" type="button" :disabled="!filteredProducts.length" @click="exportHtml('zh')">
-            导出中文 HTML
-          </button>
-          <button class="export-button export-button-en" type="button" :disabled="!filteredProducts.length" @click="exportHtml('en')">
-            Export English HTML
-          </button>
-        </div>
+        <button class="export-button" type="button" :disabled="!filteredProducts.length" @click="exportHtml">
+          {{ exportLanguage === 'en' ? 'Export English HTML' : '导出中文 HTML' }}
+        </button>
         <div class="density-toggle" role="group" aria-label="表格密度">
           <button :class="{ active: density === 'compact' }" type="button" @click="density = 'compact'">紧凑</button>
           <button :class="{ active: density === 'standard' }" type="button" @click="density = 'standard'">标准</button>

@@ -2,7 +2,9 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 
 use axum::{
     extract::{Path as AxumPath, State},
-    http::{header::AUTHORIZATION, HeaderMap},
+    http::{header::{AUTHORIZATION, CACHE_CONTROL}, HeaderMap, HeaderValue},
+    middleware,
+    response::Response,
     routing::{get, post},
     Json, Router,
 };
@@ -42,8 +44,16 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/api/jobs/:job_id", get(get_job))
         .route("/api/usage", get(get_usage))
         .nest_service("/", ServeDir::new(frontend_dist))
+        .layer(middleware::map_response(require_revalidation))
         .layer(CorsLayer::permissive())
         .with_state(state)
+}
+
+async fn require_revalidation(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    response
 }
 
 async fn health() -> Json<serde_json::Value> {

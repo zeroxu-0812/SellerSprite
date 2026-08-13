@@ -673,6 +673,18 @@ input[type='search'] {
   border-radius: 8px;
 }
 
+.export-language-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-left: 9px;
+  color: var(--muted);
+  border-left: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .export-language-toggle button {
   height: 28px;
   padding: 0 9px;
@@ -1612,6 +1624,12 @@ input[type='search'] {
 
   .page-content {
     padding: 12px 10px 20px;
+  }
+
+  .export-language-control {
+    justify-content: space-between;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .control-panel {

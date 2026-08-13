@@ -150,12 +150,15 @@ function exportHtml() {
 
       <div class="table-tools">
         <input v-model="query" type="search" placeholder="搜索标题 / ASIN / 品牌 / 卖家" />
-        <div class="export-language-toggle" role="group" aria-label="HTML 导出语言">
-          <button :class="{ active: exportLanguage === 'zh' }" type="button" @click="exportLanguage = 'zh'">中文</button>
-          <button :class="{ active: exportLanguage === 'en' }" type="button" @click="exportLanguage = 'en'">English</button>
+        <div class="export-language-control">
+          <span>导出语言</span>
+          <div class="export-language-toggle" role="group" aria-label="HTML 导出语言">
+            <button :class="{ active: exportLanguage === 'zh' }" type="button" @click="exportLanguage = 'zh'">中文</button>
+            <button :class="{ active: exportLanguage === 'en' }" type="button" @click="exportLanguage = 'en'">English</button>
+          </div>
         </div>
         <button class="export-button" type="button" :disabled="!filteredProducts.length" @click="exportHtml">
-          导出 HTML
+          {{ exportLanguage === 'en' ? '导出英文 HTML' : '导出中文 HTML' }}
         </button>
         <div class="density-toggle" role="group" aria-label="表格密度">
           <button :class="{ active: density === 'compact' }" type="button" @click="density = 'compact'">紧凑</button>

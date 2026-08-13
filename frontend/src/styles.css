@@ -713,6 +713,21 @@ input[type='search'] {
   font-weight: 800;
 }
 
+.export-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.export-button-en {
+  color: #0878bd;
+  background: #e7f6fd;
+}
+
+.export-button-en:hover {
+  color: #066ba9;
+  background: #d6effa;
+}
+
 .export-button:hover {
   background: #066ba9;
 }
@@ -1630,6 +1645,15 @@ input[type='search'] {
     justify-content: space-between;
     padding-left: 0;
     border-left: 0;
+  }
+
+  .export-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .export-actions .export-button {
+    width: 100%;
   }
 
   .control-panel {

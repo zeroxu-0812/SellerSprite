@@ -1,23 +1,75 @@
 import type { ProductRow } from '../types'
-import type { ProductColumn } from './columns'
+import type { ProductColumn, ProductDisplayLanguage } from './columns'
 
-const summaryFields = [
-  { key: 'product_identity', label: '产品定位：' },
-  { key: 'target_user', label: '目标用户：' },
-  { key: 'primary_scene', label: '主要场景：' },
-  { key: 'overall_summary', label: '整体总结：' },
-] as const
+export type ExportLanguage = ProductDisplayLanguage
 
-export function exportCompetitorTableHtml(products: ProductRow[], columns: ProductColumn[], marketplace = '') {
+const exportCopy = {
+  zh: {
+    documentLang: 'zh-CN',
+    locale: 'zh-Hans-CN',
+    title: '核心竞手表格',
+    searchPlaceholder: '搜索标题 / ASIN / 品牌 / 卖家',
+    fields: '字段',
+    products: '产品',
+    noMatches: '没有匹配竞手。调整搜索或显示产品。',
+    summaryTitle: '商品信息摘要',
+    summaryDescription: '四项自动生成信息',
+    noFieldsWithSummary: '未选择普通字段，以下为商品信息摘要。',
+    noFields: '未选择显示字段。',
+    competitorCountSuffix: ' 个竞手',
+    sortBy: '按',
+    sortSuffix: '排序',
+    fileSuffix: 'zh',
+    summaryFields: [
+      { key: 'product_identity', label: '产品定位：' },
+      { key: 'target_user', label: '目标用户：' },
+      { key: 'primary_scene', label: '主要场景：' },
+      { key: 'overall_summary', label: '整体总结：' },
+    ],
+  },
+  en: {
+    documentLang: 'en',
+    locale: 'en-US',
+    title: 'Core Competitor Matrix',
+    searchPlaceholder: 'Search title / ASIN / brand / seller',
+    fields: 'Fields',
+    products: 'Products',
+    noMatches: 'No matching competitors. Adjust the search or product selection.',
+    summaryTitle: 'Product Summary',
+    summaryDescription: 'Four automatically generated insights',
+    noFieldsWithSummary: 'No standard fields selected. Product summaries are shown below.',
+    noFields: 'No fields selected.',
+    competitorCountSuffix: ' competitors',
+    sortBy: 'Sort by ',
+    sortSuffix: '',
+    fileSuffix: 'en',
+    summaryFields: [
+      { key: 'product_identity', label: 'Product Positioning:' },
+      { key: 'target_user', label: 'Target Audience:' },
+      { key: 'primary_scene', label: 'Primary Use Case:' },
+      { key: 'overall_summary', label: 'Overall Summary:' },
+    ],
+  },
+} as const
+
+export function exportCompetitorTableHtml(
+  products: ProductRow[],
+  columns: ProductColumn[],
+  marketplace = '',
+  language: ExportLanguage = 'zh',
+) {
+  const copy = exportCopy[language]
+  const summaryFields = copy.summaryFields
   const payload = {
     marketplace,
+    ui: copy,
     summaryFields,
     hasSummary: products.some((product) =>
       summaryFields.some((field) => String(product[field.key] ?? '').trim()),
     ),
     columns: columns.map((column) => ({
       key: column.key,
-      label: column.label,
+      label: language === 'en' ? column.labelEn : column.label,
       className: column.className || '',
       align: column.align || '',
       sortKey: column.sortKey || '',
@@ -35,7 +87,7 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
         columns.map((column) => [
           column.key,
           {
-            html: column.render(product),
+            html: column.render(product, language),
             className: column.className || '',
             align: column.align || '',
           },
@@ -45,11 +97,11 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
   }
   const dataJson = JSON.stringify(payload).replace(/</g, '\\u003c')
   const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="${copy.documentLang}">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>核心竞手表格</title>
+<title>${copy.title}</title>
 <style>
   *{box-sizing:border-box}
   body{margin:0;background:#eef2f6;color:#17202a;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:13px}
@@ -106,17 +158,17 @@ export function exportCompetitorTableHtml(products: ProductRow[], columns: Produ
 </head>
 <body>
 <header>
-  <h1>核心竞手表格</h1>
+  <h1>${copy.title}</h1>
 </header>
 <div class="toolbar">
   <div class="toolbar-left">
-    <input id="search" class="search" type="search" placeholder="搜索标题 / ASIN / 品牌 / 卖家">
+    <input id="search" class="search" type="search" placeholder="${copy.searchPlaceholder}">
     <span id="count" class="count"></span>
   </div>
 </div>
 <div class="toolbar-stack">
-  <div class="toolbar-row"><span class="label">字段</span><div id="fieldToggles" class="toolbar-right"></div></div>
-  <div class="toolbar-row"><span class="label">产品</span><div id="productToggles" class="toolbar-right"></div></div>
+  <div class="toolbar-row"><span class="label">${copy.fields}</span><div id="fieldToggles" class="toolbar-right"></div></div>
+  <div class="toolbar-row"><span class="label">${copy.products}</span><div id="productToggles" class="toolbar-right"></div></div>
 </div>
 <div class="table-wrap">
 <table id="table">
@@ -146,7 +198,7 @@ function cmp(a, b, col) {
   if (av == null) return 1;
   if (bv == null) return -1;
   if (typeof av === 'number' && typeof bv === 'number') return av - bv;
-  return String(av).localeCompare(String(bv), 'zh-Hans-CN');
+  return String(av).localeCompare(String(bv), DATA.ui.locale);
 }
 
 function filteredRows() {
@@ -168,7 +220,7 @@ function renderControls() {
 
 function renderBody(cols, rows) {
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td class="table-empty" colspan="2">没有匹配竞手。调整搜索或显示产品。</td></tr>';
+    tbody.innerHTML = '<tr><td class="table-empty" colspan="2">' + DATA.ui.noMatches + '</td></tr>';
     return;
   }
   const tableRows = cols.map(col => '<tr class="' + (col.key === 'img' ? 'pinned-row' : '') + '">' + fieldCell(col) + rows.map(row => {
@@ -176,13 +228,13 @@ function renderBody(cols, rows) {
     const align = cell.align ? ' align-' + cell.align : '';
     return '<td class="' + (cell.className || '') + align + '">' + cell.html + '</td>';
   }).join('') + '</tr>').join('');
-  const summaryRows = DATA.hasSummary ? '<tr class="summary-separator"><td class="field-name">商品信息摘要</td>' + rows.map(() => '<td>四项自动生成信息</td>').join('') + '</tr>' + DATA.summaryFields.map(field => {
+  const summaryRows = DATA.hasSummary ? '<tr class="summary-separator"><td class="field-name">' + DATA.ui.summaryTitle + '</td>' + rows.map(() => '<td>' + DATA.ui.summaryDescription + '</td>').join('') + '</tr>' + DATA.summaryFields.map(field => {
     return '<tr class="summary-row"><td class="field-name">' + field.label + '</td>' + rows.map(row => {
       const value = row.summary && row.summary[field.key] ? row.summary[field.key] : '—';
       return '<td class="summary-value">' + escapeHtml(value) + '</td>';
     }).join('') + '</tr>';
   }).join('') : '';
-  const emptyMessage = DATA.hasSummary ? '未选择普通字段，以下为商品信息摘要。' : '未选择显示字段。';
+  const emptyMessage = DATA.hasSummary ? DATA.ui.noFieldsWithSummary : DATA.ui.noFields;
   tbody.innerHTML = (tableRows || '<tr><td class="table-empty" colspan="' + (rows.length + 1) + '">' + emptyMessage + '</td></tr>') + summaryRows;
 }
 
@@ -198,7 +250,7 @@ function escapeHtml(value) {
 
 function fieldCell(col) {
   const button = col.sortKey
-    ? '<button type="button" class="sort-chip ' + (sortKey === col.key ? 'active' : '') + '" data-sort="' + col.key + '" title="按' + col.label + '排序">' + (sortKey === col.key ? (sortDir === 'asc' ? '▲' : '▼') : '↕') + '</button>'
+    ? '<button type="button" class="sort-chip ' + (sortKey === col.key ? 'active' : '') + '" data-sort="' + col.key + '" title="' + DATA.ui.sortBy + col.label + DATA.ui.sortSuffix + '">' + (sortKey === col.key ? (sortDir === 'asc' ? '▲' : '▼') : '↕') + '</button>'
     : '';
   return '<td class="field-name"><div class="field-cell"><span>' + col.label + '</span>' + button + '</div></td>';
 }
@@ -206,7 +258,7 @@ function fieldCell(col) {
 function render() {
   const cols = DATA.columns.filter(col => visibleFields.has(col.key));
   const rows = filteredRows();
-  count.textContent = rows.length + ' / ' + DATA.rows.length + ' 个竞手';
+  count.textContent = rows.length + ' / ' + DATA.rows.length + DATA.ui.competitorCountSuffix;
   renderControls();
   renderBody(cols, rows);
 }
@@ -276,7 +328,7 @@ render();
   const link = document.createElement('a')
   const timestamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
   link.href = url
-  link.download = `competitor-table-${timestamp}.html`
+  link.download = `competitor-table-${copy.fileSuffix}-${timestamp}.html`
   document.body.appendChild(link)
   link.click()
   link.remove()

@@ -663,13 +663,31 @@ input[type='search'] {
   outline: none;
 }
 
-.density-toggle {
+.density-toggle,
+.export-language-toggle {
   display: flex;
   gap: 4px;
   padding: 3px;
   background: var(--surface-2);
   border: 1px solid var(--line-soft);
   border-radius: 8px;
+}
+
+.export-language-toggle button {
+  height: 28px;
+  padding: 0 9px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.export-language-toggle button.active {
+  color: #075f99;
+  background: #fff;
+  box-shadow: 0 0 0 1px #bdd8e8;
 }
 
 .export-button {

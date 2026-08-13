@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import type { ProductRow } from '../types'
 import { type ProductColumn, productColumns } from '../utils/columns'
-import { exportCompetitorTableHtml } from '../utils/exportHtml'
+import { exportCompetitorTableHtml, type ExportLanguage } from '../utils/exportHtml'
 import {
   benchmarkLabels,
   buildCompetitorProfiles,
@@ -17,6 +17,7 @@ const props = defineProps<{
 
 const query = ref('')
 const density = ref<'compact' | 'standard'>('compact')
+const exportLanguage = ref<ExportLanguage>('zh')
 const selectedKeys = ref(new Set(productColumns.map((column) => column.key)))
 const selectedProduct = ref<ProductRow | null>(null)
 const sortKey = ref<string>('amount')
@@ -134,7 +135,7 @@ function exportHtml() {
   const exportColumns = sourceColumn && !visibleColumns.value.some((column) => column.key === sourceColumn.key)
     ? [sourceColumn, ...visibleColumns.value]
     : visibleColumns.value
-  exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace)
+  exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace, exportLanguage.value)
 }
 
 </script>
@@ -149,6 +150,10 @@ function exportHtml() {
 
       <div class="table-tools">
         <input v-model="query" type="search" placeholder="搜索标题 / ASIN / 品牌 / 卖家" />
+        <div class="export-language-toggle" role="group" aria-label="HTML 导出语言">
+          <button :class="{ active: exportLanguage === 'zh' }" type="button" @click="exportLanguage = 'zh'">中文</button>
+          <button :class="{ active: exportLanguage === 'en' }" type="button" @click="exportLanguage = 'en'">English</button>
+        </div>
         <button class="export-button" type="button" :disabled="!filteredProducts.length" @click="exportHtml">
           导出 HTML
         </button>

@@ -2,7 +2,10 @@ use std::{path::{Path, PathBuf}, sync::Arc};
 
 use axum::{
     extract::{Path as AxumPath, State},
-    http::{header::{AUTHORIZATION, CACHE_CONTROL}, HeaderMap, HeaderValue},
+    http::{
+        header::{AUTHORIZATION, CACHE_CONTROL, EXPIRES, PRAGMA},
+        HeaderMap, HeaderValue,
+    },
     middleware,
     response::Response,
     routing::{get, post},
@@ -52,7 +55,16 @@ pub fn app(state: Arc<AppState>) -> Router {
 async fn require_revalidation(mut response: Response) -> Response {
     response
         .headers_mut()
-        .insert(CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+        .insert(
+            CACHE_CONTROL,
+            HeaderValue::from_static("no-store, no-cache, must-revalidate, max-age=0"),
+        );
+    response
+        .headers_mut()
+        .insert(PRAGMA, HeaderValue::from_static("no-cache"));
+    response
+        .headers_mut()
+        .insert(EXPIRES, HeaderValue::from_static("0"));
     response
 }
 

@@ -19,6 +19,71 @@ export interface ProductColumn {
 
 export type ProductDisplayLanguage = 'zh' | 'en'
 
+const countryNamesEn: Record<string, string> = {
+  中国: 'China',
+  中国大陆: 'China',
+  中华人民共和国: 'China',
+  cn: 'China',
+  china: 'China',
+  美国: 'United States',
+  美利坚合众国: 'United States',
+  us: 'United States',
+  usa: 'United States',
+  unitedstates: 'United States',
+  英国: 'United Kingdom',
+  uk: 'United Kingdom',
+  gb: 'United Kingdom',
+  unitedkingdom: 'United Kingdom',
+  德国: 'Germany',
+  de: 'Germany',
+  germany: 'Germany',
+  日本: 'Japan',
+  jp: 'Japan',
+  japan: 'Japan',
+  法国: 'France',
+  fr: 'France',
+  france: 'France',
+  西班牙: 'Spain',
+  es: 'Spain',
+  spain: 'Spain',
+  意大利: 'Italy',
+  it: 'Italy',
+  italy: 'Italy',
+  加拿大: 'Canada',
+  canada: 'Canada',
+  墨西哥: 'Mexico',
+  mexico: 'Mexico',
+  印度: 'India',
+  india: 'India',
+  越南: 'Vietnam',
+  vietnam: 'Vietnam',
+  韩国: 'South Korea',
+  southkorea: 'South Korea',
+  澳大利亚: 'Australia',
+  australia: 'Australia',
+  荷兰: 'Netherlands',
+  netherlands: 'Netherlands',
+  波兰: 'Poland',
+  poland: 'Poland',
+  瑞典: 'Sweden',
+  sweden: 'Sweden',
+  土耳其: 'Turkey',
+  turkey: 'Turkey',
+  巴西: 'Brazil',
+  brazil: 'Brazil',
+  新加坡: 'Singapore',
+  singapore: 'Singapore',
+  中国香港: 'Hong Kong',
+  香港: 'Hong Kong',
+  hongkong: 'Hong Kong',
+  中国台湾: 'Taiwan',
+  台湾: 'Taiwan',
+  taiwan: 'Taiwan',
+  未知: 'Unknown',
+  暂无: 'Unknown',
+  unknown: 'Unknown',
+}
+
 export const productColumns: ProductColumn[] = [
   { key: 'img', label: '主图', labelEn: 'Image', className: 'img-cell', group: 'identity', render: renderImage },
   { key: 'title', label: '标题', labelEn: 'Title', className: 'title-cell', group: 'identity', sortKey: 'title', sortType: 'text', render: renderTitle },
@@ -123,7 +188,16 @@ function renderBsr(product: ProductRow): string {
 }
 
 function renderSeller(product: ProductRow, language: ProductDisplayLanguage = 'zh'): string {
-  return `<div class="seller-block"><div class="name">${fmt(product.seller_name)}</div><div class="nat">${language === 'en' ? 'Country:' : '国家:'} ${fmt(product.seller_dto__nation_name)}</div></div>`
+  const country = localizedCountryName(product.seller_dto__nation_name, language)
+  return `<div class="seller-block"><div class="name">${fmt(product.seller_name)}</div><div class="nat">${language === 'en' ? 'Country:' : '国家:'} ${country}</div></div>`
+}
+
+function localizedCountryName(input: unknown, language: ProductDisplayLanguage): string {
+  if (input == null || input === '' || input === '-') return '<span class="empty">—</span>'
+  const value = String(input).trim()
+  if (language !== 'en') return safe(value)
+  const key = value.toLowerCase().replace(/[\s._-]+/g, '')
+  return safe(countryNamesEn[key] || value)
 }
 
 function renderSales(product: ProductRow, language: ProductDisplayLanguage = 'zh'): string {

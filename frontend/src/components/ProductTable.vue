@@ -254,6 +254,7 @@ function renderExportTraffic(product: ProductRow) {
 const trafficExportColumn: ProductColumn = {
   key: 'traffic_30d',
   label: '近30天流量占比',
+  labelEn: 'Last 30-Day Traffic Mix',
   className: 'traffic-export-cell',
   group: 'performance',
   render: renderExportTraffic,

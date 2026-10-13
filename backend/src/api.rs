@@ -18,7 +18,7 @@ use crate::{
     auth::TokenManager,
     config::AppConfig,
     error::Result,
-    models::{AdminLoginRequest, AdminLoginResponse, RunRequest},
+    models::{AdminLoginRequest, AdminLoginResponse, RunRequest, TrafficResponse},
     pipeline,
     progress::{JobStore, RunProgress},
     usage::{UsageSnapshot, UsageStore},
@@ -36,6 +36,8 @@ pub struct AppState {
     pub max_job_records: usize,
     pub max_asins: usize,
     pub max_workers: usize,
+    pub traffic_slots: Arc<Semaphore>,
+    pub sif_traffic: crate::sif_traffic::SifTrafficClient,
 }
 
 pub fn app(state: Arc<AppState>) -> Router {
@@ -45,6 +47,7 @@ pub fn app(state: Arc<AppState>) -> Router {
         .route("/api/auth/login", post(admin_login))
         .route("/api/jobs", post(create_job))
         .route("/api/jobs/:job_id", get(get_job))
+        .route("/api/traffic/:marketplace/:asin", get(get_traffic))
         .route("/api/usage", get(get_usage))
         .nest_service("/", ServeDir::new(frontend_dist))
         .layer(middleware::map_response(require_revalidation))
@@ -180,4 +183,32 @@ async fn get_job(
         .await
         .ok_or_else(|| crate::error::AppError::BadRequest("job not found".to_string()))?;
     Ok(Json(progress))
+}
+
+async fn get_traffic(
+    State(state): State<Arc<AppState>>,
+    AxumPath((marketplace, asin)): AxumPath<(String, String)>,
+) -> Result<Json<TrafficResponse>> {
+    let asin = asin.trim().to_ascii_uppercase();
+    if !is_asin(&asin) {
+        return Err(crate::error::AppError::BadRequest(
+            "invalid ASIN: expected 10 letters or digits".to_string(),
+        ));
+    }
+    let marketplace = pipeline::marketplace_code(Some(&marketplace))?;
+    let _permit = state
+        .traffic_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|err| crate::error::AppError::Anyhow(err.into()))?;
+    let response = state
+        .sif_traffic
+        .fetch_recent_30_days(&state.client, &asin, &marketplace)
+        .await?;
+    Ok(Json(response))
+}
+
+fn is_asin(value: &str) -> bool {
+    value.len() == 10 && value.bytes().all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
 }

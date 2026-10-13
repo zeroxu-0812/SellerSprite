@@ -73,3 +73,17 @@ export interface UsageResponse {
   marketplaces: Partial<Record<MarketplaceCode, MarketplaceUsage>>
   recent: SearchUsageEvent[]
 }
+
+export interface TrafficShare {
+  organic: number
+  ads: number
+  recommendation: number
+}
+
+export interface TrafficResponse {
+  asin: string
+  marketplace: MarketplaceCode | string
+  station: string
+  window_days: number
+  snapshot: TrafficShare | null
+}

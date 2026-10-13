@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { ProductRow } from '../types'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
+import { ApiError, getTraffic } from '../api'
+import type { ProductRow, TrafficResponse, TrafficShare } from '../types'
 import { type ProductColumn, productColumns } from '../utils/columns'
 import { exportCompetitorTableHtml, type ExportLanguage } from '../utils/exportHtml'
 import {
@@ -24,6 +25,14 @@ const sortKey = ref<string>('amount')
 const sortDirection = ref<'asc' | 'desc'>('desc')
 const activeMetric = ref<BenchmarkMetric>('sales')
 const baselineAsin = ref('')
+const trafficQueuePaused = ref(false)
+const trafficStates = reactive(new Map<string, RowTrafficState>())
+let trafficGeneration = 0
+
+type RowTrafficState =
+  | { status: 'loading' }
+  | { status: 'done'; response: TrafficResponse }
+  | { status: 'error'; message: string }
 
 const profiles = computed(() => buildCompetitorProfiles(props.products))
 const visibleColumns = computed(() => productColumns.filter((column) => selectedKeys.value.has(column.key)))
@@ -130,13 +139,139 @@ function marketplaceFor(product: ProductRow): string {
   return String(product.marketplace_code || props.marketplace || 'com')
 }
 
+function trafficIdentity(product: ProductRow) {
+  const asin = String(product.asin || '').trim().toUpperCase()
+  if (!/^[A-Z0-9]{10}$/.test(asin)) return null
+  const marketplace = marketplaceFor(product).trim().toLowerCase()
+  return { asin, marketplace, key: `${marketplace}:${asin}` }
+}
+
+function trafficState(product: ProductRow) {
+  const identity = trafficIdentity(product)
+  return identity ? trafficStates.get(identity.key) : undefined
+}
+
+function trafficSnapshot(product: ProductRow): TrafficShare | null {
+  const state = trafficState(product)
+  return state?.status === 'done' ? state.response.snapshot : null
+}
+
+function trafficErrorMessage(product: ProductRow) {
+  const state = trafficState(product)
+  return state?.status === 'error' ? state.message : ''
+}
+
+async function fetchProductTraffic(product: ProductRow) {
+  const identity = trafficIdentity(product)
+  if (!identity) return true
+  trafficStates.set(identity.key, { status: 'loading' })
+  try {
+    const response = await getTraffic(identity.asin, identity.marketplace)
+    trafficStates.set(identity.key, { status: 'done', response })
+    return true
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    trafficStates.set(identity.key, { status: 'error', message })
+    return !(error instanceof ApiError && (error.status === 401 || error.status === 429))
+  }
+}
+
+async function loadTrafficQueue() {
+  const generation = ++trafficGeneration
+  trafficQueuePaused.value = false
+  for (const product of props.products) {
+    if (generation !== trafficGeneration) return
+    const identity = trafficIdentity(product)
+    if (!identity || trafficStates.has(identity.key)) continue
+    const shouldContinue = await fetchProductTraffic(product)
+    if (!shouldContinue) {
+      trafficQueuePaused.value = true
+      return
+    }
+  }
+}
+
+async function retryTraffic(product: ProductRow) {
+  const shouldContinue = await fetchProductTraffic(product)
+  if (shouldContinue) void loadTrafficQueue()
+}
+
+function formatTraffic(value: number) {
+  return `${(value * 100).toFixed(1)}%`
+}
+
+function trafficPieStyle(share: TrafficShare) {
+  const organicEnd = Math.max(0, Math.min(100, share.organic * 100))
+  const adsEnd = Math.max(organicEnd, Math.min(100, (share.organic + share.ads) * 100))
+  return {
+    background: `conic-gradient(#159a69 0 ${organicEnd}%, #1687d2 ${organicEnd}% ${adsEnd}%, #d98927 ${adsEnd}% 100%)`,
+  }
+}
+
+function trafficTooltip(share: TrafficShare) {
+  return `最近30天：自然 ${formatTraffic(share.organic)}，广告 ${formatTraffic(share.ads)}，推荐 ${formatTraffic(share.recommendation)}`
+}
+
+function productTrafficPieStyle(product: ProductRow) {
+  const share = trafficSnapshot(product)
+  return share ? trafficPieStyle(share) : undefined
+}
+
+function productTrafficTooltip(product: ProductRow) {
+  const share = trafficSnapshot(product)
+  return share ? trafficTooltip(share) : '暂无流量数据'
+}
+
+function productTrafficPercent(product: ProductRow, key: 'organic' | 'ads') {
+  const share = trafficSnapshot(product)
+  return share ? formatTraffic(share[key]) : '--'
+}
+
+function renderExportTraffic(product: ProductRow) {
+  const identity = trafficIdentity(product)
+  if (!identity) return '<span class="traffic-export-status">无有效 ASIN</span>'
+  const state = trafficState(product)
+  if (!state) {
+    const label = trafficQueuePaused.value ? '队列已暂停' : '尚未读取'
+    return `<span class="traffic-export-status">${label}</span>`
+  }
+  if (state.status === 'loading') return '<span class="traffic-export-status">读取中</span>'
+  if (state.status === 'error') return '<span class="traffic-export-status error">读取失败</span>'
+  const share = state.response.snapshot
+  if (!share) return '<span class="traffic-export-status">暂无数据</span>'
+  const organicEnd = Math.max(0, Math.min(100, share.organic * 100))
+  const adsEnd = Math.max(organicEnd, Math.min(100, (share.organic + share.ads) * 100))
+  const tooltip = trafficTooltip(share)
+  return `<div class="traffic-export-result" title="${tooltip}">
+    <div class="traffic-export-pie" style="background:conic-gradient(#159a69 0 ${organicEnd}%,#1687d2 ${organicEnd}% ${adsEnd}%,#d98927 ${adsEnd}% 100%)"></div>
+    <div class="traffic-export-values">
+      <span><i class="organic"></i>自然 <b>${formatTraffic(share.organic)}</b></span>
+      <span><i class="ads"></i>广告 <b>${formatTraffic(share.ads)}</b></span>
+    </div>
+  </div>`
+}
+
+const trafficExportColumn: ProductColumn = {
+  key: 'traffic_30d',
+  label: '近30天流量占比',
+  className: 'traffic-export-cell',
+  group: 'performance',
+  render: renderExportTraffic,
+}
+
 function exportHtml() {
   const sourceColumn = productColumns.find((column) => column.key === 'marketplace_code')
-  const exportColumns = sourceColumn && !visibleColumns.value.some((column) => column.key === sourceColumn.key)
+  const selectedExportColumns = sourceColumn && !visibleColumns.value.some((column) => column.key === sourceColumn.key)
     ? [sourceColumn, ...visibleColumns.value]
     : visibleColumns.value
+  const exportColumns = selectedExportColumns.flatMap((column) =>
+    column.key === 'amount' ? [column, trafficExportColumn] : [column],
+  )
   exportCompetitorTableHtml(filteredProducts.value, exportColumns, props.marketplace, exportLanguage.value)
 }
+
+watch(() => props.products, () => loadTrafficQueue(), { immediate: true })
+onUnmounted(() => { trafficGeneration += 1 })
 
 </script>
 
@@ -220,23 +355,26 @@ function exportHtml() {
         <table class="product-table">
           <thead>
             <tr>
-              <th v-for="column in visibleColumns" :key="column.key" :class="column.align ? `align-${column.align}` : ''">
-                <button
-                  type="button"
-                  class="sort-button"
-                  :class="{ sortable: column.sortKey, active: sortKey === column.key }"
-                  :disabled="!column.sortKey"
-                  @click="setSort(column)"
-                >
-                  <span>{{ column.label }}</span>
-                  <b v-if="sortKey === column.key">{{ sortDirection === 'asc' ? '▲' : '▼' }}</b>
-                </button>
-              </th>
+              <template v-for="column in visibleColumns" :key="column.key">
+                <th :class="column.align ? `align-${column.align}` : ''">
+                  <button
+                    type="button"
+                    class="sort-button"
+                    :class="{ sortable: column.sortKey, active: sortKey === column.key }"
+                    :disabled="!column.sortKey"
+                    @click="setSort(column)"
+                  >
+                    <span>{{ column.label }}</span>
+                    <b v-if="sortKey === column.key">{{ sortDirection === 'asc' ? '▲' : '▼' }}</b>
+                  </button>
+                </th>
+                <th v-if="column.key === 'amount'" class="traffic-inline-header">近30天流量占比</th>
+              </template>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!filteredProducts.length">
-              <td class="table-empty" :colspan="visibleColumns.length || 1">
+              <td class="table-empty" :colspan="(visibleColumns.length || 1) + (visibleColumns.some((column) => column.key === 'amount') ? 1 : 0)">
                 没有匹配竞手。调整搜索或重新抓取。
               </td>
             </tr>
@@ -246,12 +384,37 @@ function exportHtml() {
               :class="{ selected: selectedProduct === product }"
               @click="selectedProduct = product"
             >
-              <td
-                v-for="column in visibleColumns"
-                :key="column.key"
-                :class="[column.className, column.align ? `align-${column.align}` : '']"
-                v-html="column.render(product)"
-              />
+              <template v-for="column in visibleColumns" :key="column.key">
+                <td
+                  :class="[column.className, column.align ? `align-${column.align}` : '']"
+                  v-html="column.render(product)"
+                />
+                <td v-if="column.key === 'amount'" class="traffic-inline-cell">
+                  <div v-if="!trafficIdentity(product)" class="traffic-inline-status">无有效 ASIN</div>
+                  <div v-else-if="trafficQueuePaused && !trafficState(product)" class="traffic-inline-status error">队列已暂停</div>
+                  <div v-else-if="!trafficState(product) || trafficState(product)?.status === 'loading'" class="traffic-inline-status loading">
+                    <i />{{ trafficState(product) ? '读取中' : '等待读取' }}
+                  </div>
+                  <div v-else-if="trafficState(product)?.status === 'error'" class="traffic-inline-status error">
+                    <span>读取失败</span>
+                    <button type="button" :title="trafficErrorMessage(product)" @click.stop="retryTraffic(product)">重试</button>
+                  </div>
+                  <div v-else-if="trafficSnapshot(product)" class="traffic-inline-result">
+                    <div
+                      class="traffic-mini-pie"
+                      :style="productTrafficPieStyle(product)"
+                      :title="productTrafficTooltip(product)"
+                      role="img"
+                      :aria-label="productTrafficTooltip(product)"
+                    />
+                    <div class="traffic-inline-values">
+                      <span><i class="organic" />自然 <b>{{ productTrafficPercent(product, 'organic') }}</b></span>
+                      <span><i class="ads" />广告 <b>{{ productTrafficPercent(product, 'ads') }}</b></span>
+                    </div>
+                  </div>
+                  <div v-else class="traffic-inline-status">暂无数据</div>
+                </td>
+              </template>
             </tr>
           </tbody>
         </table>

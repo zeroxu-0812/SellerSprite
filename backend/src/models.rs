@@ -74,6 +74,22 @@ pub struct ProductDetail {
     pub about: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TrafficShare {
+    pub organic: f64,
+    pub ads: f64,
+    pub recommendation: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrafficResponse {
+    pub asin: String,
+    pub marketplace: String,
+    pub station: String,
+    pub window_days: u8,
+    pub snapshot: Option<TrafficShare>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct MarketOverview {
     pub result_count: Option<usize>,

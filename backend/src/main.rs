@@ -9,6 +9,7 @@ mod pipeline;
 mod progress;
 mod sellersprite;
 mod signing;
+mod sif_traffic;
 mod summary;
 mod transform;
 mod usage;
@@ -59,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
         max_job_records,
         max_asins,
         max_workers,
+        traffic_slots: Arc::new(Semaphore::new(env_usize("SIF_TRAFFIC_MAX_ACTIVE_REQUESTS", 1).clamp(1, 2))),
+        sif_traffic: sif_traffic::SifTrafficClient::new(root.join(".sif_token_cache.json")),
     });
 
     let addr: SocketAddr = std::env::var("SELLERSPRITE_BIND")

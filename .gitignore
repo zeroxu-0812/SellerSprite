@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .env
 .token_cache.json
+.sif_token_cache.json
 .client_tokens.json
 output/
 .venv/

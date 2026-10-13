@@ -52,7 +52,8 @@ const recentSearches = computed(() => (usage.value?.recent ?? []).slice(0, 5).ma
 
 function pageFromHash(): AppPage {
   const route = window.location.hash.replace(/^#\/?/, '')
-  if (route === 'analyze' || route === 'results' || route === 'dashboard') return route
+  const pageName = route.split('/')[0]
+  if (pageName === 'analyze' || pageName === 'results' || pageName === 'dashboard') return pageName
   return 'landing'
 }
 

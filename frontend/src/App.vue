@@ -11,6 +11,8 @@ import RunControlPanel from './components/RunControlPanel.vue'
 import type { MarketplaceCode, RunProgress, RunResponse, UsageResponse } from './types'
 import { marketplaceByCode } from './utils/marketplaces'
 
+const logoUrl = `${import.meta.env.BASE_URL}oceanwing-logo.jpg`
+
 type AppPage = 'landing' | 'analyze' | 'results' | 'dashboard'
 
 const page = ref<AppPage>(pageFromHash())
@@ -266,7 +268,7 @@ onUnmounted(() => {
   <main v-else class="app-shell">
     <header class="app-header">
       <button class="brand-block brand-button" type="button" @click="navigate('landing')">
-        <img class="app-logo" src="/oceanwing-logo.jpg" alt="Oceanwing" />
+        <img class="app-logo" :src="logoUrl" alt="Oceanwing" />
         <div><strong>SellerSprite</strong><span>竞手分析</span></div>
       </button>
       <div class="app-header-actions">

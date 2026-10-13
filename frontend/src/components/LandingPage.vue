@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { marketplaces } from '../utils/marketplaces'
 
+const logoUrl = `${import.meta.env.BASE_URL}oceanwing-logo.jpg`
+
 defineEmits<{
   analyze: []
   dashboard: []
@@ -11,7 +13,7 @@ defineEmits<{
   <main class="landing-page">
     <header class="landing-nav">
       <div class="landing-brand">
-        <img src="/oceanwing-logo.jpg" alt="Oceanwing" />
+        <img :src="logoUrl" alt="Oceanwing" />
         <strong>SellerSprite</strong>
         <span>竞手分析</span>
       </div>
@@ -32,7 +34,7 @@ defineEmits<{
 
       <div class="landing-product-preview" aria-hidden="true">
         <div class="preview-header">
-          <div><img src="/oceanwing-logo.jpg" alt="" /><b>竞手分析工作台</b></div>
+          <div><img :src="logoUrl" alt="" /><b>竞手分析工作台</b></div>
           <span>● 就绪 · 3 ASIN</span>
         </div>
         <div class="preview-body">

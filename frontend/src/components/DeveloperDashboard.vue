@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { MarketplaceCode, UsageResponse } from '../types'
 import { marketplaceByCode, marketplaces } from '../utils/marketplaces'
 
+const logoUrl = `${import.meta.env.BASE_URL}oceanwing-logo.jpg`
+
 const props = defineProps<{
   usage: UsageResponse | null
   loading: boolean
@@ -61,7 +63,7 @@ function formatTime(value: string | null) {
   <main class="developer-shell">
     <aside class="developer-sidebar">
       <div class="developer-brand">
-        <img src="/oceanwing-logo.jpg" alt="Oceanwing" />
+        <img :src="logoUrl" alt="Oceanwing" />
         <div><strong>SellerSprite</strong><span>开发者工作台</span></div>
       </div>
       <div class="developer-nav-label">数据管理</div>

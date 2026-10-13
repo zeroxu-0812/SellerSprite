@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
+const logoUrl = `${import.meta.env.BASE_URL}oceanwing-logo.jpg`
+
 defineProps<{
   loading: boolean
   error: string
@@ -23,7 +25,7 @@ function submit() {
   <main class="admin-login-shell">
     <header class="admin-login-nav">
       <button class="brand-block brand-button" type="button" @click="$emit('home')">
-        <img class="app-logo" src="/oceanwing-logo.jpg" alt="Oceanwing" />
+        <img class="app-logo" :src="logoUrl" alt="Oceanwing" />
         <div><strong>SellerSprite</strong><span>开发者工作台</span></div>
       </button>
       <button class="admin-login-home" type="button" @click="$emit('home')">返回首页</button>
